@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Author Training - PR Buddy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0b;
+            --bg-secondary: #141417;
+            --bg-tertiary: #1c1c21;
+            --bg-hover: #26262d;
+            
+            --text-primary: #f4f4f5;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            
+            --accent: #22d3ee;
+            --accent-hover: #67e8f9;
+            --accent-dim: #0891b2;
+            
+            --success: #4ade80;
+            --warning: #fbbf24;
+            --error: #f87171;
+            
+            --border: #27272a;
+            
+            --font-sans: 'Outfit', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            
+            --radius-sm: 6px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.5rem;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            font-family: var(--font-sans);
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .back-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+        
+        .pr-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .pr-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.375rem 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            font-family: var(--font-mono);
+            font-size: 0.813rem;
+            color: var(--accent);
+        }
+        
+        .session-type {
+            padding: 0.375rem 0.75rem;
+            background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--bg-primary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .readiness {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .readiness-label {
+            font-size: 0.813rem;
+            color: var(--text-muted);
+        }
+        
+        .readiness-bar {
+            width: 120px;
+            height: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .readiness-fill {
+            height: 100%;
+            background: var(--success);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        
+        .readiness-value {
+            font-family: var(--font-mono);
+            font-size: 0.813rem;
+            color: var(--success);
+            min-width: 40px;
+        }
+        
+        /* Main layout */
+        .main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        /* Chat panel */
+        .chat-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+        }
+        
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .message {
+            max-width: 80%;
+            padding: 1rem 1.25rem;
+            border-radius: var(--radius-lg);
+            line-height: 1.6;
+        }
+        
+        .message.user {
+            align-self: flex-end;
+            background: var(--accent-dim);
+            color: var(--text-primary);
+        }
+        
+        .message.assistant {
+            align-self: flex-start;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+        }
+        
+        .message.system {
+            align-self: center;
+            background: transparent;
+            border: 1px dashed var(--border);
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            padding: 0.75rem 1rem;
+        }
+        
+        .message.thinking {
+            align-self: flex-start;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        
+        .typing-indicator {
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.5rem;
+        }
+        
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typing {
+            0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+            30% { opacity: 1; transform: translateY(-4px); }
+        }
+        
+        /* Input area */
+        .input-area {
+            padding: 1.5rem;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+        }
+        
+        .input-wrapper {
+            display: flex;
+            gap: 0.75rem;
+        }
+        
+        .input-field {
+            flex: 1;
+            padding: 1rem 1.25rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            font-size: 1rem;
+            resize: none;
+        }
+        
+        .input-field:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        .send-btn {
+            padding: 1rem 1.5rem;
+            background: var(--accent);
+            border: none;
+            border-radius: var(--radius-md);
+            color: var(--bg-primary);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .send-btn:hover {
+            background: var(--accent-hover);
+        }
+        
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .mic-btn {
+            width: 48px;
+            height: 48px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+        
+        .mic-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .mic-btn.recording {
+            background: var(--error);
+            border-color: var(--error);
+            color: white;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        /* Context sidebar */
+        .context-panel {
+            width: 320px;
+            background: var(--bg-secondary);
+            overflow-y: auto;
+        }
+        
+        .context-section {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .context-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+        
+        .context-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            margin-bottom: 0.5rem;
+        }
+        
+        .context-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .context-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--bg-hover);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        
+        .context-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .context-item-title {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+        }
+        
+        .context-item-desc {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+        
+        .stat {
+            background: var(--bg-tertiary);
+            padding: 0.75rem;
+            border-radius: var(--radius-sm);
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-family: var(--font-mono);
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        
+        .stat-label {
+            font-size: 0.688rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        
+        /* Voice mode styles */
+        .voice-mode .input-wrapper {
+            display: none;
+        }
+        
+        .voice-controls {
+            display: none;
+            justify-content: center;
+            gap: 1rem;
+        }
+        
+        .voice-mode .voice-controls {
+            display: flex;
+        }
+        
+        .voice-btn {
+            width: 64px;
+            height: 64px;
+            background: var(--accent);
+            border: none;
+            border-radius: 50%;
+            color: var(--bg-primary);
+            cursor: pointer;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        
+        .voice-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .voice-btn.recording {
+            background: var(--error);
+            animation: pulse 1.5s infinite;
+        }
+        
+        /* Connection status */
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            font-size: 0.813rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+        
+        .status-dot.connected {
+            background: var(--success);
+        }
+        
+        .status-dot.connecting {
+            background: var(--warning);
+            animation: pulse 1s infinite;
+        }
+        
+        .status-dot.error {
+            background: var(--error);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-left">
+            <button class="back-btn" onclick="window.location.href='/'">← Back</button>
+            <div class="pr-info">
+                <span class="pr-badge" id="prBadge">Loading...</span>
+                <span class="session-type">Author Training</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="readiness">
+                <span class="readiness-label">Readiness:</span>
+                <div class="readiness-bar">
+                    <div class="readiness-fill" id="readinessFill" style="width: 0%"></div>
+                </div>
+                <span class="readiness-value" id="readinessValue">0%</span>
+            </div>
+            <div class="connection-status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </div>
+    </header>
+    
+    <main class="main">
+        <div class="chat-panel" id="chatPanel">
+            <div class="chat-messages" id="chatMessages">
+                <!-- Messages will be added here -->
+            </div>
+            
+            <div class="input-area">
+                <div class="input-wrapper">
+                    <textarea 
+                        class="input-field" 
+                        id="messageInput" 
+                        placeholder="Explain your PR changes..."
+                        rows="1"
+                    ></textarea>
+                    <button class="mic-btn" id="micBtn" title="Voice input">🎤</button>
+                    <button class="send-btn" id="sendBtn">Send</button>
+                </div>
+                <div class="voice-controls">
+                    <button class="voice-btn" id="voiceBtn">🎤</button>
+                </div>
+            </div>
+        </div>
+        
+        <aside class="context-panel">
+            <div class="context-section">
+                <h3 class="context-title">Knowledge Base</h3>
+                <div class="stat-grid" id="statGrid">
+                    <div class="stat">
+                        <div class="stat-value" id="diffCount">0</div>
+                        <div class="stat-label">Diffs</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="explanationCount">0</div>
+                        <div class="stat-label">Explanations</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="commentCount">0</div>
+                        <div class="stat-label">Comments</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="docCount">0</div>
+                        <div class="stat-label">Docs</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="context-section">
+                <h3 class="context-title">Recent Context</h3>
+                <div id="recentContext">
+                    <p style="color: var(--text-muted); font-size: 0.875rem;">No context indexed yet.</p>
+                </div>
+            </div>
+            
+            <div class="context-section">
+                <h3 class="context-title">Tips</h3>
+                <div class="context-item">
+                    <div class="context-icon">💡</div>
+                    <div class="context-content">
+                        <div class="context-item-title">Explain "why"</div>
+                        <div class="context-item-desc">Share the reasoning behind decisions, not just what changed.</div>
+                    </div>
+                </div>
+                <div class="context-item">
+                    <div class="context-icon">⚖️</div>
+                    <div class="context-content">
+                        <div class="context-item-title">Discuss tradeoffs</div>
+                        <div class="context-item-desc">What alternatives did you consider?</div>
+                    </div>
+                </div>
+                <div class="context-item">
+                    <div class="context-icon">⚠️</div>
+                    <div class="context-content">
+                        <div class="context-item-title">Note risks</div>
+                        <div class="context-item-desc">What could go wrong or needs attention?</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </main>
+    
+    <script>
+        // Parse URL parameters
+        const params = new URLSearchParams(window.location.search);
+        const sessionId = params.get('session');
+        const mode = params.get('mode') || 'text';
+        
+        // State
+        let ws = null;
+        let isRecording = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        
+        // DOM elements
+        const chatMessages = document.getElementById('chatMessages');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const micBtn = document.getElementById('micBtn');
+        const voiceBtn = document.getElementById('voiceBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const prBadge = document.getElementById('prBadge');
+        const chatPanel = document.getElementById('chatPanel');
+        
+        // Initialize
+        if (!sessionId) {
+            alert('No session ID provided');
+            window.location.href = '/';
+        }
+        
+        // Set up voice mode
+        if (mode !== 'text') {
+            chatPanel.classList.add('voice-mode');
+        }
+        
+        // Connect WebSocket
+        function connect() {
+            const wsUrl = `ws://${window.location.host}/ws/${sessionId}`;
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                statusDot.className = 'status-dot connected';
+                statusText.textContent = 'Connected';
+            };
+            
+            ws.onclose = () => {
+                statusDot.className = 'status-dot error';
+                statusText.textContent = 'Disconnected';
+            };
+            
+            ws.onerror = () => {
+                statusDot.className = 'status-dot error';
+                statusText.textContent = 'Error';
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+        }
+        
+        // Handle incoming messages
+        function handleMessage(data) {
+            switch (data.type) {
+                case 'session_started':
+                    // Session started
+                    break;
+                    
+                case 'agent_response':
+                    removeTypingIndicator();
+                    addMessage('assistant', data.data.text);
+                    break;
+                    
+                case 'user_message':
+                    addMessage('user', data.data.text);
+                    break;
+                    
+                case 'agent_thinking':
+                    showTypingIndicator();
+                    break;
+                    
+                case 'transcript':
+                    addMessage('user', data.data.text);
+                    break;
+                    
+                case 'audio_chunk':
+                    // Play audio (base64 encoded PCM16)
+                    if (data.data.audio) {
+                        playAudio(data.data.audio);
+                    }
+                    break;
+                    
+                case 'error':
+                    addMessage('system', `Error: ${data.data.error}`);
+                    break;
+            }
+        }
+        
+        // Add message to chat
+        function addMessage(type, text) {
+            const msg = document.createElement('div');
+            msg.className = `message ${type}`;
+            msg.textContent = text;
+            chatMessages.appendChild(msg);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Typing indicator
+        function showTypingIndicator() {
+            const indicator = document.createElement('div');
+            indicator.className = 'message thinking';
+            indicator.id = 'typingIndicator';
+            indicator.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+            chatMessages.appendChild(indicator);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function removeTypingIndicator() {
+            const indicator = document.getElementById('typingIndicator');
+            if (indicator) indicator.remove();
+        }
+        
+        // Send message
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            ws.send(JSON.stringify({ type: 'message', text }));
+            messageInput.value = '';
+        }
+        
+        // Audio playback (placeholder)
+        function playAudio(base64Audio) {
+            // TODO: Implement audio playback
+            console.log('Audio received', base64Audio.length);
+        }
+        
+        // Event listeners
+        sendBtn.addEventListener('click', sendMessage);
+        
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // Start connection
+        connect();
+    </script>
+</body>
+</html>
+

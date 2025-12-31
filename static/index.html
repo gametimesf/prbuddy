@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PR Buddy - AI Review Companion</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Monochrome base with electric accent */
+            --bg-primary: #0a0a0b;
+            --bg-secondary: #141417;
+            --bg-tertiary: #1c1c21;
+            --bg-hover: #26262d;
+            
+            --text-primary: #f4f4f5;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            
+            --accent: #22d3ee;
+            --accent-hover: #67e8f9;
+            --accent-dim: #0891b2;
+            
+            --success: #4ade80;
+            --warning: #fbbf24;
+            --error: #f87171;
+            
+            --border: #27272a;
+            --border-focus: var(--accent);
+            
+            --font-sans: 'Outfit', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            
+            --radius-sm: 6px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+            
+            --shadow-glow: 0 0 40px rgba(34, 211, 238, 0.15);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Background gradient */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(34, 211, 238, 0.08), transparent),
+                radial-gradient(ellipse 60% 40% at 100% 100%, rgba(34, 211, 238, 0.05), transparent);
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            box-shadow: var(--shadow-glow);
+        }
+        
+        .logo-text {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+        
+        .tagline {
+            color: var(--text-secondary);
+            font-size: 1.125rem;
+            font-weight: 400;
+            max-width: 500px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        
+        /* Main form card */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-xl);
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1.75rem;
+        }
+        
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+        
+        label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        input[type="text"],
+        select {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+        
+        input[type="text"]::placeholder {
+            color: var(--text-muted);
+        }
+        
+        input[type="text"]:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.1);
+        }
+        
+        select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 1rem center;
+            background-size: 1.25rem;
+            padding-right: 3rem;
+        }
+        
+        /* Session type toggle */
+        .toggle-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        
+        .toggle-option {
+            position: relative;
+        }
+        
+        .toggle-option input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .toggle-label {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1.25rem;
+            background: var(--bg-tertiary);
+            border: 2px solid var(--border);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        
+        .toggle-option input:checked + .toggle-label {
+            border-color: var(--accent);
+            background: rgba(34, 211, 238, 0.1);
+        }
+        
+        .toggle-label:hover {
+            background: var(--bg-hover);
+        }
+        
+        .toggle-icon {
+            font-size: 2rem;
+        }
+        
+        .toggle-title {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .toggle-desc {
+            font-size: 0.813rem;
+            color: var(--text-muted);
+        }
+        
+        /* Submit button */
+        .btn-primary {
+            width: 100%;
+            padding: 1.125rem 2rem;
+            background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+            border: none;
+            border-radius: var(--radius-md);
+            color: var(--bg-primary);
+            font-family: var(--font-sans);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-glow);
+        }
+        
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* Features grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+        
+        .feature {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            text-align: center;
+        }
+        
+        .feature-icon {
+            font-size: 1.75rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .feature-title {
+            font-weight: 600;
+            font-size: 0.938rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .feature-desc {
+            font-size: 0.813rem;
+            color: var(--text-muted);
+        }
+        
+        /* Error message */
+        .error-message {
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            border-radius: var(--radius-md);
+            padding: 1rem;
+            color: var(--error);
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            display: none;
+        }
+        
+        .error-message.visible {
+            display: block;
+        }
+        
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.813rem;
+        }
+        
+        .footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Responsive */
+        @media (max-width: 640px) {
+            .container {
+                padding: 2rem 1rem;
+            }
+            
+            .card {
+                padding: 1.5rem;
+            }
+            
+            .features {
+                grid-template-columns: 1fr;
+            }
+            
+            .toggle-group {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">🤖</div>
+                <span class="logo-text">PR Buddy</span>
+            </div>
+            <p class="tagline">
+                Train an AI to answer reviewer questions about your pull request—so you don't have to be there.
+            </p>
+        </header>
+        
+        <div class="card">
+            <form id="sessionForm">
+                <div class="form-group">
+                    <label for="prUrl">Pull Request URL</label>
+                    <input 
+                        type="text" 
+                        id="prUrl" 
+                        name="prUrl" 
+                        placeholder="https://github.com/owner/repo/pull/123"
+                        required
+                    >
+                </div>
+                
+                <div class="form-group">
+                    <label>I am the...</label>
+                    <div class="toggle-group">
+                        <div class="toggle-option">
+                            <input type="radio" name="sessionType" id="typeAuthor" value="author" checked>
+                            <label class="toggle-label" for="typeAuthor">
+                                <span class="toggle-icon">✍️</span>
+                                <span class="toggle-title">Author</span>
+                                <span class="toggle-desc">Train the agent on your PR</span>
+                            </label>
+                        </div>
+                        <div class="toggle-option">
+                            <input type="radio" name="sessionType" id="typeReviewer" value="reviewer">
+                            <label class="toggle-label" for="typeReviewer">
+                                <span class="toggle-icon">🔍</span>
+                                <span class="toggle-title">Reviewer</span>
+                                <span class="toggle-desc">Ask questions about the PR</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="mode">Interaction Mode</label>
+                    <select id="mode" name="mode">
+                        <option value="text">💬 Text Chat</option>
+                        <option value="pipeline">🎤 Voice (Standard)</option>
+                        <option value="realtime">⚡ Voice (Low Latency)</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="btn-primary" id="submitBtn">
+                    Start Session
+                </button>
+                
+                <div class="error-message" id="errorMessage"></div>
+            </form>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">📚</div>
+                <div class="feature-title">Context Aware</div>
+                <div class="feature-desc">RAG-powered knowledge base</div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🎯</div>
+                <div class="feature-title">Confidence Signals</div>
+                <div class="feature-desc">Know when to ask the author</div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🔊</div>
+                <div class="feature-title">Voice Enabled</div>
+                <div class="feature-desc">Talk while you review</div>
+            </div>
+        </div>
+    </div>
+    
+    <footer class="footer">
+        <p>Built with <a href="https://github.com/openai/openai-agents-python">OpenAI Agents SDK</a> and <a href="https://weaviate.io">Weaviate</a></p>
+    </footer>
+    
+    <script>
+        const form = document.getElementById('sessionForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const prUrl = document.getElementById('prUrl').value;
+            const sessionType = document.querySelector('input[name="sessionType"]:checked').value;
+            const mode = document.getElementById('mode').value;
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating session...';
+            errorMessage.classList.remove('visible');
+            
+            try {
+                const response = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pr_url: prUrl,
+                        mode: mode,
+                        session_type: sessionType
+                    })
+                });
+                
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.detail || 'Failed to create session');
+                }
+                
+                const data = await response.json();
+                
+                // Redirect to appropriate page
+                const page = sessionType === 'author' ? 'author.html' : 'reviewer.html';
+                window.location.href = `/static/${page}?session=${data.session_id}&mode=${mode}`;
+                
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.classList.add('visible');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Start Session';
+            }
+        });
+    </script>
+</body>
+</html>
+
