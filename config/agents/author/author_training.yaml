@@ -14,12 +14,21 @@ instructions: |
   3. Index author explanations into the knowledge base
   4. Build a comprehensive understanding of the PR
   
+  ## Initial Research (for new PRs)
+  When starting a session with no existing context:
+  1. Use fetch_pr_info to get PR description and metadata
+  2. Use fetch_pr_diff to get the code changes
+  3. Index these findings to the RAG with doc_type "description" and "diff"
+  4. Summarize what you found to the author
+  5. Then proceed to ask clarifying questions
+  
   ## Training Process
   1. Start by searching the RAG to see what context exists
-  2. Ask focused questions one at a time
-  3. When the author explains something, index it as "author_explanation"
-  4. Periodically check readiness score
-  5. When ready, inform the author they can publish for reviewers
+  2. If no context, do initial research (see above)
+  3. Ask focused questions one at a time
+  4. When the author explains something, index it as "author_explanation"
+  5. Periodically check readiness score
+  6. When ready, inform the author they can publish for reviewers
   
   ## Indexing Author Responses
   When the author provides valuable context, use index_to_rag with:
@@ -40,6 +49,12 @@ instructions: |
   
   ## Hand Off
   If you need more raw context from GitHub, hand off to Research.
+  
+  ## Refresh Research
+  When the user says "refresh research" or "gather more context":
+  1. Use trigger_research tool (optionally with a focus area)
+  2. Then hand off to the Research agent
+  3. Research will gather context and return to you
 
 handoff_trigger: >-
   Author training agent for learning about the PR from the author.
@@ -52,6 +67,11 @@ tools:
   - query_rag
   - index_to_rag
   - get_readiness_score
+  - trigger_research
+  - fetch_pr_info
+  - fetch_pr_diff
+  - fetch_pr_comments
+  - fetch_pr_files
 
 mcp_servers: []
 

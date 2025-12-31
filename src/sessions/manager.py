@@ -15,7 +15,12 @@ import weaviate
 from agents import Agent
 from agents.realtime import RealtimeAgent, RealtimeRunner
 
-from ..agents.factory import create_agent_system, create_realtime_agent_system
+from ..agents.factory import (
+    create_author_system,
+    create_reviewer_system,
+    create_author_realtime_system,
+    create_reviewer_realtime_system,
+)
 from ..rag.store import WeaviatePRRAGStore, set_rag_store
 from ..rag.schema import create_schema, delete_tenant, list_tenants
 from ..voice.config import TTSVoiceConfig, STTVoiceConfig, WhisperSTTConfig, PollyVoiceConfig
@@ -142,7 +147,7 @@ class PRSessionManager:
             )
         else:
             runner = await self._create_text_session(
-                session_id, pr_context, config, on_event
+                session_id, pr_context, config, rag_store, on_event
             )
         
         session = PRSession(
@@ -162,10 +167,11 @@ class PRSessionManager:
         config: PRSessionConfig,
     ) -> RealtimeRunner:
         """Create a realtime runner for voice mode."""
-        # Create realtime agent system
-        system = await create_realtime_agent_system(
-            entry_point_override="AuthorTraining" if config.session_type == "author" else "ReviewerQA",
-        )
+        # Create realtime agent system based on session type
+        if config.session_type == "author":
+            system = await create_author_realtime_system()
+        else:
+            system = await create_reviewer_realtime_system()
         
         return RealtimeRunner(starting_agent=system.entry_point)
     
@@ -177,10 +183,11 @@ class PRSessionManager:
         on_event: Callable[[Any], Coroutine[Any, Any, None]] | None = None,
     ) -> PipelineSession:
         """Create a pipeline session for voice mode."""
-        # Create text agent system (pipeline uses text agents internally)
-        system = await create_agent_system(
-            entry_point_override="AuthorTraining" if config.session_type == "author" else "ReviewerQA",
-        )
+        # Create text agent system based on session type
+        if config.session_type == "author":
+            system = await create_author_system()
+        else:
+            system = await create_reviewer_system()
         
         # Create STT provider
         stt_config = config.stt_config or WhisperSTTConfig()
@@ -205,19 +212,23 @@ class PRSessionManager:
         session_id: str,
         pr_context: PRContext,
         config: PRSessionConfig,
+        rag_store: WeaviatePRRAGStore,
         on_event: Callable[[Any], Coroutine[Any, Any, None]] | None = None,
     ) -> TextSession:
         """Create a text-only session."""
-        # Create text agent system
-        system = await create_agent_system(
-            entry_point_override="AuthorTraining" if config.session_type == "author" else "ReviewerQA",
-        )
+        # Create text agent system based on session type
+        if config.session_type == "author":
+            system = await create_author_system()
+        else:
+            system = await create_reviewer_system()
         
         return TextSession(
             session_id=session_id,
             agent=system.entry_point,
             pr_context=pr_context,
+            session_type=config.session_type,
             on_event=on_event,
+            rag_store=rag_store,
         )
     
     def get_session(self, session_id: str) -> PRSession | None:

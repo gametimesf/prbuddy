@@ -44,6 +44,7 @@ dependencies = [
 voice = [
     "pyaudio>=0.2.14",
     "numpy>=2.0.0",
+    "pydub>=0.25.1",  # Audio format conversion (requires ffmpeg)
 ]
 
 # Development and testing dependencies

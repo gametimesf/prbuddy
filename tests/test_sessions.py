@@ -19,7 +19,7 @@ class TestPRSessionManager:
     
     @pytest.mark.asyncio
     async def test_create_text_session(
-        self, manager, pr_context, config_manager, register_mock_tools
+        self, manager, pr_context, patch_config_base, register_mock_tools
     ):
         """Test creating a text session."""
         config = PRSessionConfig(
@@ -36,7 +36,7 @@ class TestPRSessionManager:
     
     @pytest.mark.asyncio
     async def test_get_session(
-        self, manager, pr_context, config_manager, register_mock_tools
+        self, manager, pr_context, patch_config_base, register_mock_tools
     ):
         """Test getting a session by ID."""
         session = await manager.create_session(pr_context)
@@ -54,7 +54,7 @@ class TestPRSessionManager:
     
     @pytest.mark.asyncio
     async def test_list_sessions(
-        self, manager, pr_context, config_manager, register_mock_tools
+        self, manager, pr_context, patch_config_base, register_mock_tools
     ):
         """Test listing all sessions."""
         await manager.create_session(pr_context)
@@ -66,7 +66,7 @@ class TestPRSessionManager:
     
     @pytest.mark.asyncio
     async def test_delete_session(
-        self, manager, pr_context, config_manager, register_mock_tools
+        self, manager, pr_context, patch_config_base, register_mock_tools
     ):
         """Test deleting a session."""
         session = await manager.create_session(pr_context)
@@ -85,7 +85,7 @@ class TestPRSessionManager:
     
     @pytest.mark.asyncio
     async def test_list_sessions_for_pr(
-        self, manager, config_manager, register_mock_tools
+        self, manager, patch_config_base, register_mock_tools
     ):
         """Test listing sessions for a specific PR."""
         pr1 = PRContext(owner="owner", repo="repo1", number=1)
@@ -118,10 +118,13 @@ class TestTextSession:
         assert session.pr_context is not None
     
     def test_get_history_empty(self, session):
-        """Test getting empty history."""
+        """Test getting history with only system context message."""
         history = session.get_history()
         
-        assert history == []
+        # History should only contain the system message with PR context
+        assert len(history) == 1
+        assert history[0]["role"] == "system"
+        assert "PR Context" in history[0]["content"]
     
     def test_clear_history(self, session):
         """Test clearing history."""

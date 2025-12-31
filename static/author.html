@@ -477,6 +477,240 @@
         .status-dot.error {
             background: var(--error);
         }
+        
+        /* Activity log */
+        .activity-log {
+            max-height: 200px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .activity-empty {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            font-style: italic;
+        }
+        
+        .activity-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            font-size: 0.813rem;
+            border-left: 3px solid var(--border);
+            animation: slideIn 0.2s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        .activity-item.tool-call {
+            border-left-color: var(--accent);
+        }
+        
+        .activity-item.tool-result {
+            border-left-color: var(--success);
+        }
+        
+        .activity-item.handoff {
+            border-left-color: var(--warning);
+        }
+        
+        .activity-item.kb-indexed {
+            border-left-color: #a78bfa;
+        }
+        
+        .activity-item.kb-queried {
+            border-left-color: #60a5fa;
+        }
+        
+        .activity-icon {
+            flex-shrink: 0;
+            font-size: 1rem;
+        }
+        
+        .activity-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .activity-title {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        .activity-detail {
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .activity-time {
+            font-size: 0.688rem;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+        
+        /* Spinner for in-progress items */
+        .activity-item.in-progress {
+            position: relative;
+        }
+        
+        .activity-item.in-progress::after {
+            content: '';
+            position: absolute;
+            right: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: translateY(-50%) rotate(360deg); }
+        }
+        
+        /* Activity item hover */
+        .activity-item:hover {
+            background: var(--bg-hover);
+        }
+        
+        .activity-item.error {
+            border-left-color: var(--error);
+        }
+        
+        /* Activity detail modal */
+        .activity-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+        
+        .activity-modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .activity-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .activity-modal-header h3 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        
+        .activity-modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        
+        .activity-modal-close:hover {
+            color: var(--text-primary);
+        }
+        
+        .activity-modal-body {
+            padding: 1rem 1.25rem;
+            overflow-y: auto;
+        }
+        
+        .activity-modal-section {
+            margin-bottom: 1rem;
+        }
+        
+        .activity-modal-section label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .activity-modal-section span {
+            font-size: 0.875rem;
+        }
+        
+        .activity-modal-code {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.75rem;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 0;
+        }
+        
+        /* Active agent indicator */
+        .current-agent {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: linear-gradient(135deg, rgba(34, 211, 238, 0.1), rgba(8, 145, 178, 0.1));
+            border: 1px solid rgba(34, 211, 238, 0.3);
+            border-radius: var(--radius-sm);
+            font-size: 0.813rem;
+            margin-bottom: 1rem;
+        }
+        
+        .current-agent-label {
+            color: var(--text-muted);
+        }
+        
+        .current-agent-name {
+            color: var(--accent);
+            font-weight: 500;
+        }
     </style>
 </head>
 <body>
@@ -546,6 +780,13 @@
                         <div class="stat-value" id="docCount">0</div>
                         <div class="stat-label">Docs</div>
                     </div>
+                </div>
+            </div>
+            
+            <div class="context-section">
+                <h3 class="context-title">Activity Log</h3>
+                <div id="activityLog" class="activity-log">
+                    <div class="activity-empty">Waiting for activity...</div>
                 </div>
             </div>
             
@@ -643,11 +884,28 @@
             };
         }
         
+        // Activity log state
+        const activityLog = document.getElementById('activityLog');
+        let currentAgent = 'AuthorTraining';
+        let pendingTools = {};  // Track in-progress tool calls by unique ID
+        let toolCallCounter = 0;  // Unique counter for tool calls
+        let activityDataStore = {};  // Store full data for each activity
+        
+        // Knowledge base stats
+        const kbStats = {
+            diff: 0,
+            explanation: 0,
+            comment: 0,
+            doc: 0,
+        };
+        
         // Handle incoming messages
         function handleMessage(data) {
+            console.log('Event received:', data.type, data.data);
+            
             switch (data.type) {
                 case 'session_started':
-                    // Session started
+                    addActivity('🚀', 'Session Started', 'Connected to PR Buddy', 'tool-call');
                     break;
                     
                 case 'agent_response':
@@ -661,6 +919,29 @@
                     
                 case 'agent_thinking':
                     showTypingIndicator();
+                    if (data.data && data.data.reasoning) {
+                        addActivity('🧠', 'Reasoning', data.data.reasoning, 'tool-call');
+                    }
+                    break;
+                    
+                case 'tool_call':
+                    handleToolCall(data.data);
+                    break;
+                    
+                case 'tool_result':
+                    handleToolResult(data.data);
+                    break;
+                    
+                case 'agent_handoff':
+                    handleHandoff(data.data);
+                    break;
+                    
+                case 'kb_indexed':
+                    handleKbIndexed(data.data);
+                    break;
+                    
+                case 'kb_queried':
+                    addActivity('🔍', 'RAG Query', 'Searching knowledge base...', 'kb-queried');
                     break;
                     
                 case 'transcript':
@@ -668,7 +949,6 @@
                     break;
                     
                 case 'audio_chunk':
-                    // Play audio (base64 encoded PCM16)
                     if (data.data.audio) {
                         playAudio(data.data.audio);
                     }
@@ -676,8 +956,309 @@
                     
                 case 'error':
                     addMessage('system', `Error: ${data.data.error}`);
+                    addActivity('❌', 'Error', data.data.error, 'error');
                     break;
             }
+        }
+        
+        // Handle tool call events
+        function handleToolCall(data) {
+            const toolName = data.tool || 'unknown';
+            const toolDisplayName = formatToolName(toolName);
+            const icon = getToolIcon(toolName);
+            
+            // Create unique ID for this specific call
+            const callId = `${toolName}-${toolCallCounter++}`;
+            
+            // Add to pending with unique ID
+            const itemId = addActivity(icon, toolDisplayName, `Called by ${data.agent || currentAgent}`, 'tool-call in-progress', {
+                type: 'tool_call',
+                tool: toolName,
+                agent: data.agent || currentAgent,
+                arguments: data.arguments,
+                callId: callId,
+            });
+            pendingTools[callId] = itemId;
+            
+            // Also track by tool name for the most recent call (fallback)
+            pendingTools[`latest-${toolName}`] = { itemId, callId };
+        }
+        
+        // Handle tool result events
+        function handleToolResult(data) {
+            const toolName = data.tool || 'unknown';
+            const icon = data.success !== false ? '✓' : '✗';
+            
+            // Find the pending tool call - try latest by tool name
+            let itemId = null;
+            let callId = null;
+            
+            const latestKey = `latest-${toolName}`;
+            if (pendingTools[latestKey]) {
+                itemId = pendingTools[latestKey].itemId;
+                callId = pendingTools[latestKey].callId;
+                delete pendingTools[latestKey];
+                if (callId) delete pendingTools[callId];
+            }
+            
+            // Update the existing item if found
+            if (itemId) {
+                const item = document.getElementById(itemId);
+                if (item) {
+                    item.classList.remove('in-progress');
+                    if (data.success !== false) {
+                        item.classList.add('tool-result');
+                        // Update icon to checkmark
+                        const iconEl = item.querySelector('.activity-icon');
+                        if (iconEl) iconEl.textContent = '✓';
+                    } else {
+                        item.classList.add('error');
+                        const iconEl = item.querySelector('.activity-icon');
+                        if (iconEl) iconEl.textContent = '✗';
+                    }
+                    
+                    // Update detail text with output preview
+                    const detailEl = item.querySelector('.activity-detail');
+                    if (detailEl && data.output_preview) {
+                        detailEl.textContent = data.output_preview.substring(0, 60) + (data.output_preview.length > 60 ? '...' : '');
+                        detailEl.title = data.output_preview;
+                    }
+                    
+                    // Update stored data
+                    if (activityDataStore[itemId]) {
+                        activityDataStore[itemId].result = data.output_preview;
+                        activityDataStore[itemId].success = data.success !== false;
+                    }
+                }
+            } else {
+                // No pending item found, create a new result entry
+                addActivity(icon, `${formatToolName(toolName)} completed`, 
+                    data.output_preview ? data.output_preview.substring(0, 60) : 'Done', 
+                    data.success !== false ? 'tool-result' : 'error',
+                    {
+                        type: 'tool_result',
+                        tool: toolName,
+                        result: data.output_preview,
+                        success: data.success !== false,
+                    }
+                );
+            }
+        }
+        
+        // Handle handoff events
+        function handleHandoff(data) {
+            const status = data.status || 'completed';
+            const icon = status === 'initiated' ? '🔄' : '✅';
+            const title = status === 'initiated' ? 'Handoff Initiated' : 'Handoff Completed';
+            
+            currentAgent = data.to || currentAgent;
+            addActivity(icon, title, `${data.from} → ${data.to}`, 'handoff', {
+                type: 'handoff',
+                status,
+                from: data.from,
+                to: data.to,
+            });
+            
+            // Update current agent display if exists
+            updateCurrentAgentDisplay();
+        }
+        
+        // Handle KB indexed events
+        function handleKbIndexed(data) {
+            addActivity('📥', 'Content Indexed', 'Added to knowledge base', 'kb-indexed', {
+                type: 'kb_indexed',
+                detail: 'Document added to the PR knowledge base',
+            });
+            
+            // Increment appropriate stat
+            kbStats.explanation++;
+            updateKbStats();
+        }
+        
+        // Format tool name for display
+        function formatToolName(toolName) {
+            const names = {
+                'fetch_pr_diff': 'Fetching PR Diff',
+                'fetch_pr_info': 'Fetching PR Info',
+                'fetch_pr_comments': 'Fetching Comments',
+                'fetch_pr_files': 'Fetching File List',
+                'fetch_file_content': 'Reading File',
+                'index_to_rag': 'Indexing Content',
+                'query_rag': 'Querying Knowledge',
+                'get_readiness_score': 'Calculating Readiness',
+            };
+            return names[toolName] || toolName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+        
+        // Get icon for tool
+        function getToolIcon(toolName) {
+            const icons = {
+                'fetch_pr_diff': '📄',
+                'fetch_pr_info': 'ℹ️',
+                'fetch_pr_comments': '💬',
+                'fetch_pr_files': '📁',
+                'fetch_file_content': '📖',
+                'index_to_rag': '📥',
+                'query_rag': '🔍',
+                'get_readiness_score': '📊',
+            };
+            return icons[toolName] || '🔧';
+        }
+        
+        // Add activity to log
+        let activityCounter = 0;
+        function addActivity(icon, title, detail, className, fullData = null) {
+            // Remove empty message if exists
+            const empty = activityLog.querySelector('.activity-empty');
+            if (empty) empty.remove();
+            
+            const itemId = `activity-${activityCounter++}`;
+            const now = new Date();
+            const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
+            // Store full data for click-to-expand
+            if (fullData) {
+                activityDataStore[itemId] = {
+                    ...fullData,
+                    title,
+                    detail,
+                    time: now.toISOString(),
+                };
+            }
+            
+            const item = document.createElement('div');
+            item.id = itemId;
+            item.className = `activity-item ${className}`;
+            item.style.cursor = fullData ? 'pointer' : 'default';
+            item.innerHTML = `
+                <span class="activity-icon">${icon}</span>
+                <div class="activity-content">
+                    <div class="activity-title">${title}</div>
+                    <div class="activity-detail" title="${escapeHtml(detail)}">${escapeHtml(detail)}</div>
+                </div>
+                <span class="activity-time">${time}</span>
+            `;
+            
+            // Add click handler for items with data
+            if (fullData) {
+                item.addEventListener('click', () => showActivityDetail(itemId));
+            }
+            
+            // Insert at top
+            activityLog.insertBefore(item, activityLog.firstChild);
+            
+            // Limit to 30 items
+            while (activityLog.children.length > 30) {
+                const removed = activityLog.lastChild;
+                if (removed.id) delete activityDataStore[removed.id];
+                activityLog.removeChild(removed);
+            }
+            
+            return itemId;
+        }
+        
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Show activity detail modal
+        function showActivityDetail(itemId) {
+            const data = activityDataStore[itemId];
+            if (!data) return;
+            
+            // Create modal
+            const modal = document.createElement('div');
+            modal.className = 'activity-modal-overlay';
+            modal.innerHTML = `
+                <div class="activity-modal">
+                    <div class="activity-modal-header">
+                        <h3>${escapeHtml(data.title)}</h3>
+                        <button class="activity-modal-close">&times;</button>
+                    </div>
+                    <div class="activity-modal-body">
+                        <div class="activity-modal-section">
+                            <label>Type:</label>
+                            <span>${data.type || 'activity'}</span>
+                        </div>
+                        ${data.tool ? `
+                        <div class="activity-modal-section">
+                            <label>Tool:</label>
+                            <span>${data.tool}</span>
+                        </div>
+                        ` : ''}
+                        ${data.agent ? `
+                        <div class="activity-modal-section">
+                            <label>Agent:</label>
+                            <span>${data.agent}</span>
+                        </div>
+                        ` : ''}
+                        ${data.arguments ? `
+                        <div class="activity-modal-section">
+                            <label>Arguments:</label>
+                            <pre class="activity-modal-code">${escapeHtml(formatJson(data.arguments))}</pre>
+                        </div>
+                        ` : ''}
+                        ${data.result ? `
+                        <div class="activity-modal-section">
+                            <label>Result:</label>
+                            <pre class="activity-modal-code">${escapeHtml(data.result)}</pre>
+                        </div>
+                        ` : ''}
+                        ${data.from && data.to ? `
+                        <div class="activity-modal-section">
+                            <label>Handoff:</label>
+                            <span>${data.from} → ${data.to}</span>
+                        </div>
+                        ` : ''}
+                        <div class="activity-modal-section">
+                            <label>Time:</label>
+                            <span>${new Date(data.time).toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Close on click outside or close button
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal || e.target.classList.contains('activity-modal-close')) {
+                    modal.remove();
+                }
+            });
+            
+            document.body.appendChild(modal);
+        }
+        
+        // Format JSON for display
+        function formatJson(str) {
+            try {
+                const parsed = typeof str === 'string' ? JSON.parse(str) : str;
+                return JSON.stringify(parsed, null, 2);
+            } catch {
+                return str;
+            }
+        }
+        
+        // Update KB stats display
+        function updateKbStats() {
+            document.getElementById('diffCount').textContent = kbStats.diff;
+            document.getElementById('explanationCount').textContent = kbStats.explanation;
+            document.getElementById('commentCount').textContent = kbStats.comment;
+            document.getElementById('docCount').textContent = kbStats.doc;
+            
+            // Update readiness (simple calculation)
+            const total = kbStats.diff + kbStats.explanation + kbStats.comment + kbStats.doc;
+            const readiness = Math.min(100, Math.round((total / 10) * 100));
+            document.getElementById('readinessFill').style.width = `${readiness}%`;
+            document.getElementById('readinessValue').textContent = `${readiness}%`;
+        }
+        
+        // Update current agent display
+        function updateCurrentAgentDisplay() {
+            // Could add a current agent indicator in the UI
+            console.log('Current agent:', currentAgent);
         }
         
         // Add message to chat
@@ -713,14 +1294,156 @@
             messageInput.value = '';
         }
         
-        // Audio playback (placeholder)
-        function playAudio(base64Audio) {
-            // TODO: Implement audio playback
-            console.log('Audio received', base64Audio.length);
+        // Audio context for playback
+        let audioContext = null;
+        let audioQueue = [];
+        let isPlaying = false;
+        
+        function getAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 24000  // Match TTS output sample rate
+                });
+            }
+            return audioContext;
+        }
+        
+        // Audio playback
+        async function playAudio(base64Audio) {
+            try {
+                const ctx = getAudioContext();
+                
+                // Resume context if suspended (browser autoplay policy)
+                if (ctx.state === 'suspended') {
+                    await ctx.resume();
+                }
+                
+                // Decode base64 to ArrayBuffer
+                const binaryString = atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                // Convert PCM16 to Float32 for Web Audio API
+                const pcm16 = new Int16Array(bytes.buffer);
+                const float32 = new Float32Array(pcm16.length);
+                for (let i = 0; i < pcm16.length; i++) {
+                    float32[i] = pcm16[i] / 32768.0;
+                }
+                
+                // Create audio buffer
+                const audioBuffer = ctx.createBuffer(1, float32.length, 24000);
+                audioBuffer.getChannelData(0).set(float32);
+                
+                // Queue the audio
+                audioQueue.push(audioBuffer);
+                
+                // Play if not already playing
+                if (!isPlaying) {
+                    playNextInQueue();
+                }
+            } catch (e) {
+                console.error('Audio playback error:', e);
+            }
+        }
+        
+        function playNextInQueue() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                return;
+            }
+            
+            isPlaying = true;
+            const ctx = getAudioContext();
+            const buffer = audioQueue.shift();
+            
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.onended = playNextInQueue;
+            source.start();
+        }
+        
+        // Microphone recording
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                    }
+                });
+                
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
+                
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    audioChunks.push(e.data);
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    
+                    // Convert to base64 and send
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64 = reader.result.split(',')[1];
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'audio',
+                                audio: base64,
+                                format: 'webm'
+                            }));
+                        }
+                    };
+                    reader.readAsDataURL(audioBlob);
+                    
+                    // Stop stream tracks
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.start();
+                isRecording = true;
+                micBtn.classList.add('recording');
+                micBtn.textContent = '⏹';
+                
+            } catch (e) {
+                console.error('Microphone error:', e);
+                addMessage('system', 'Could not access microphone. Please check permissions.');
+            }
+        }
+        
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                isRecording = false;
+                micBtn.classList.remove('recording');
+                micBtn.textContent = '🎤';
+            }
+        }
+        
+        function toggleRecording() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
         }
         
         // Event listeners
         sendBtn.addEventListener('click', sendMessage);
+        
+        micBtn.addEventListener('click', toggleRecording);
+        
+        if (voiceBtn) {
+            voiceBtn.addEventListener('click', toggleRecording);
+        }
         
         messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -729,8 +1452,115 @@
             }
         });
         
-        // Start connection
+        // Fetch initial session info and start polling KB stats
+        async function initSession() {
+            try {
+                // Get session info
+                const response = await fetch(`/api/sessions`);
+                const data = await response.json();
+                const session = data.sessions.find(s => s.id === sessionId);
+                
+                if (session) {
+                    prBadge.textContent = session.pr_id;
+                    
+                    // Store PR info for polling
+                    window.prInfo = parsePrId(session.pr_id);
+                    
+                    // Start polling KB stats
+                    pollKbStats();
+                    setInterval(pollKbStats, 5000);  // Poll every 5 seconds
+                }
+            } catch (err) {
+                console.error('Failed to get session info:', err);
+            }
+        }
+        
+        // Parse PR ID like "owner/repo#123"
+        function parsePrId(prId) {
+            const match = prId.match(/^(.+)\/(.+)#(\d+)$/);
+            if (match) {
+                return { owner: match[1], repo: match[2], number: parseInt(match[3]) };
+            }
+            return null;
+        }
+        
+        // Poll KB stats
+        async function pollKbStats() {
+            if (!window.prInfo) return;
+            
+            const { owner, repo, number } = window.prInfo;
+            
+            try {
+                const response = await fetch(`/api/pr/${owner}/${repo}/${number}/status`);
+                if (response.ok) {
+                    const status = await response.json();
+                    
+                    // Update stats from document_types
+                    const types = status.document_types || {};
+                    kbStats.diff = types.diff || 0;
+                    kbStats.explanation = types.author_explanation || 0;
+                    kbStats.comment = types.comment || 0;
+                    kbStats.doc = types.doc || types.description || 0;
+                    
+                    updateKbStats();
+                    
+                    // Update recent context
+                    updateRecentContext(status);
+                }
+            } catch (err) {
+                console.error('Failed to poll KB stats:', err);
+            }
+        }
+        
+        // Update recent context section
+        function updateRecentContext(status) {
+            const recentContext = document.getElementById('recentContext');
+            const total = status.document_count || 0;
+            
+            if (total === 0) {
+                recentContext.innerHTML = '<p style="color: var(--text-muted); font-size: 0.875rem;">No context indexed yet.</p>';
+                return;
+            }
+            
+            const types = status.document_types || {};
+            let html = '';
+            
+            if (types.diff) {
+                html += `<div class="context-item">
+                    <div class="context-icon">📄</div>
+                    <div class="context-content">
+                        <div class="context-item-title">${types.diff} diff chunks</div>
+                        <div class="context-item-desc">Code changes indexed</div>
+                    </div>
+                </div>`;
+            }
+            
+            if (types.author_explanation) {
+                html += `<div class="context-item">
+                    <div class="context-icon">💬</div>
+                    <div class="context-content">
+                        <div class="context-item-title">${types.author_explanation} explanations</div>
+                        <div class="context-item-desc">Your explanations captured</div>
+                    </div>
+                </div>`;
+            }
+            
+            if (types.description) {
+                html += `<div class="context-item">
+                    <div class="context-icon">📝</div>
+                    <div class="context-content">
+                        <div class="context-item-title">PR Description</div>
+                        <div class="context-item-desc">Title and description indexed</div>
+                    </div>
+                </div>`;
+            }
+            
+            recentContext.innerHTML = html || '<p style="color: var(--text-muted); font-size: 0.875rem;">No context indexed yet.</p>';
+        }
+        
+        // Start connection and initialize
         connect();
+        initSession();
     </script>
 </body>
 </html>

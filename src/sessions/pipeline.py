@@ -193,8 +193,45 @@ class PipelineSession:
                     # Process the collected audio
                     await self._process_audio()
     
+    async def process_audio_chunk(self, audio: bytes, format: str = "webm") -> None:
+        """Process a complete audio chunk (e.g., from browser recording).
+        
+        This bypasses VAD since the browser already handles speech detection
+        via start/stop recording.
+        
+        Args:
+            audio: Complete audio chunk.
+            format: Audio format ('webm', 'wav', 'pcm').
+        """
+        if self._is_processing:
+            return
+        
+        self._is_processing = True
+        await self._emit(PipelineEventType.PROCESSING_AUDIO)
+        
+        try:
+            # Transcribe directly (Whisper supports webm)
+            transcript = await self.stt.transcribe(audio, format=format)
+            
+            if not transcript.strip():
+                self._is_processing = False
+                return
+            
+            await self._emit(PipelineEventType.TRANSCRIPT, {"text": transcript})
+            
+            # Process with agent
+            response = await self._run_agent(transcript)
+            
+            # Synthesize response
+            await self._synthesize_and_stream(response)
+            
+        except Exception as e:
+            await self._emit(PipelineEventType.ERROR, {"error": str(e)})
+        finally:
+            self._is_processing = False
+    
     async def _process_audio(self) -> None:
-        """Process collected audio through the pipeline."""
+        """Process collected audio through the pipeline (via VAD)."""
         if not self._audio_buffer:
             return
         
@@ -207,7 +244,7 @@ class PipelineSession:
             self._audio_buffer.clear()
             
             # Transcribe
-            transcript = await self.stt.transcribe(audio)
+            transcript = await self.stt.transcribe(audio, format="pcm")
             
             if not transcript.strip():
                 self._is_processing = False

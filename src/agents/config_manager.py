@@ -243,6 +243,73 @@ class FileSystemConfigManager(AgentConfigManager):
         return True
 
 
+class MultiDirConfigManager(AgentConfigManager):
+    """Config manager that merges configs from multiple directories.
+    
+    Useful for loading agents from separate directories (e.g., common + system-specific).
+    Read operations merge from all directories; write operations are not supported.
+    
+    Example:
+        manager = MultiDirConfigManager([
+            Path("config/agents/common"),
+            Path("config/agents/author"),
+        ])
+        configs = await manager.get_all_configs()
+    """
+    
+    def __init__(self, dirs: list[Path | str]) -> None:
+        """Initialize with multiple config directories.
+        
+        Args:
+            dirs: List of directories to load configs from.
+        """
+        self._dirs = [Path(d) for d in dirs]
+        self._managers = [FileSystemConfigManager(d) for d in self._dirs]
+    
+    async def list_configs(self) -> list[str]:
+        """List all agent config names from all directories."""
+        names = []
+        for manager in self._managers:
+            names.extend(await manager.list_configs())
+        return list(set(names))  # Remove duplicates
+    
+    async def get_config(self, name: str) -> AgentConfigSchema:
+        """Load a single agent config by name from any directory."""
+        for manager in self._managers:
+            try:
+                return await manager.get_config(name)
+            except KeyError:
+                continue
+        raise KeyError(f"Agent config '{name}' not found in any directory")
+    
+    async def get_all_configs(self) -> list[AgentConfigSchema]:
+        """Load all agent configs from all directories."""
+        configs = []
+        seen_names = set()
+        
+        for manager in self._managers:
+            for config in await manager.get_all_configs():
+                if config.name not in seen_names:
+                    configs.append(config)
+                    seen_names.add(config.name)
+        
+        return configs
+    
+    async def save_config(self, config: AgentConfigSchema) -> None:
+        """Save not supported for multi-directory manager."""
+        raise NotImplementedError(
+            "MultiDirConfigManager does not support save operations. "
+            "Use FileSystemConfigManager for a specific directory instead."
+        )
+    
+    async def delete_config(self, name: str) -> bool:
+        """Delete not supported for multi-directory manager."""
+        raise NotImplementedError(
+            "MultiDirConfigManager does not support delete operations. "
+            "Use FileSystemConfigManager for a specific directory instead."
+        )
+
+
 # Default config manager instance
 _default_manager: AgentConfigManager | None = None
 

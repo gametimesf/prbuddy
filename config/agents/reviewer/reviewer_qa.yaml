@@ -54,17 +54,25 @@ instructions: |
   - Don't provide opinions on code quality
   - Don't suggest code changes
   - Don't act as a code reviewer yourself
+  
+  ## Refresh Research
+  When the reviewer says "refresh research" or "get more context":
+  1. Use trigger_research tool
+  2. Hand off to the Research agent for deeper investigation
+  3. Research will gather context and return
 
 handoff_trigger: >-
   Reviewer Q&A agent for answering questions about the PR.
   This is the entry point for reviewer sessions.
 
-routes_to: []
+routes_to:
+  - Research
 
 tools:
   - query_rag
   - index_to_rag
   - get_readiness_score
+  - trigger_research
   - fetch_pr_diff
   - fetch_pr_info
   - fetch_pr_comments
@@ -73,4 +81,4 @@ tools:
 
 mcp_servers: []
 
-is_entry_point: false
+is_entry_point: true

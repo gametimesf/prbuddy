@@ -72,6 +72,20 @@ Then open http://localhost:8000 in your browser.
 | **Pipeline** | Whisper STT + Agent + Polly/ElevenLabs TTS | ~2-3s |
 | **Realtime** | OpenAI Realtime API | ~500ms |
 
+### Voice Mode Requirements
+
+For voice modes (Pipeline and Realtime), you need:
+- **ffmpeg**: For audio format conversion (browser sends WebM, pipeline expects PCM)
+  ```bash
+  # macOS
+  brew install ffmpeg
+  
+  # Ubuntu/Debian
+  sudo apt install ffmpeg
+  ```
+- **OPENAI_API_KEY**: For Whisper STT
+- **AWS credentials** or **ELEVENLABS_API_KEY**: For TTS
+
 ## Development
 
 ```bash

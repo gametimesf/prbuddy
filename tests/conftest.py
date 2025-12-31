@@ -38,16 +38,40 @@ def pr_context() -> PRContext:
 def config_dir(tmp_path: Path) -> Path:
     """Create a temporary config directory with test agents.
     
-    Note: The PR Buddy system uses entry_point_override to select the appropriate
-    entry point (AuthorTraining for authors, ReviewerQA for reviewers), so we
-    mark AuthorTraining as the default entry point here.
+    Uses the new directory structure:
+    - common/: Shared agents (Research)
+    - author/: Author system agents (AuthorTraining)
+    - reviewer/: Reviewer system agents (ReviewerQA)
     """
     config_dir = tmp_path / "agents"
     config_dir.mkdir()
+    
+    # Create subdirectories
+    common_dir = config_dir / "common"
+    author_dir = config_dir / "author"
+    reviewer_dir = config_dir / "reviewer"
+    
+    common_dir.mkdir()
+    author_dir.mkdir()
+    reviewer_dir.mkdir()
 
-    # Create AuthorTraining agent for author session tests
-    # This is the default entry point for the system
-    (config_dir / "author_training.yaml").write_text("""
+    # Create Research agent in common/ (shared by both systems)
+    # Note: routes_to is empty since the target depends on which system loads it
+    (common_dir / "research.yaml").write_text("""
+name: Research
+instructions: |
+  You gather PR context from various sources.
+handoff_trigger: Research agent for gathering context
+routes_to: []
+tools:
+  - query_rag
+  - index_to_rag
+mcp_servers: []
+is_entry_point: false
+""")
+
+    # Create AuthorTraining agent in author/
+    (author_dir / "author_training.yaml").write_text("""
 name: AuthorTraining
 instructions: |
   You help authors train the PR knowledge base.
@@ -62,34 +86,19 @@ mcp_servers: []
 is_entry_point: true
 """)
 
-    # Create ReviewerQA agent for reviewer session tests
-    # Selected via entry_point_override when creating reviewer sessions
-    (config_dir / "reviewer_qa.yaml").write_text("""
+    # Create ReviewerQA agent in reviewer/
+    (reviewer_dir / "reviewer_qa.yaml").write_text("""
 name: ReviewerQA
 instructions: |
   You answer reviewer questions about the PR.
 handoff_trigger: Reviewer Q&A agent
-routes_to: []
+routes_to:
+  - Research
 tools:
   - query_rag
   - get_readiness_score
 mcp_servers: []
-is_entry_point: false
-""")
-
-    # Create Research agent (for handoffs)
-    (config_dir / "research.yaml").write_text("""
-name: Research
-instructions: |
-  You gather PR context from various sources.
-handoff_trigger: Research agent for gathering context
-routes_to:
-  - AuthorTraining
-tools:
-  - query_rag
-  - index_to_rag
-mcp_servers: []
-is_entry_point: false
+is_entry_point: true
 """)
     
     return config_dir
@@ -97,10 +106,26 @@ is_entry_point: false
 
 @pytest.fixture
 def config_manager(config_dir: Path) -> FileSystemConfigManager:
-    """Create a config manager for testing."""
-    manager = FileSystemConfigManager(config_dir)
+    """Create a config manager for testing.
+    
+    Note: This creates a manager for the common directory.
+    For session tests, use the patch_config_base fixture instead.
+    """
+    # Use the common directory for backward compatibility with some tests
+    manager = FileSystemConfigManager(config_dir / "common")
     set_config_manager(manager)
     return manager
+
+
+@pytest.fixture
+def patch_config_base(config_dir: Path):
+    """Patch the factory config base path for tests.
+    
+    This makes create_author_system and create_reviewer_system
+    use the test config directories instead of the real ones.
+    """
+    with patch("src.agents.factory._get_config_base_path", return_value=config_dir):
+        yield config_dir
 
 
 @pytest.fixture(autouse=True)

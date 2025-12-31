@@ -457,6 +457,38 @@
             background: var(--error);
             animation: pulse 1.5s infinite;
         }
+        
+        /* Tool activity indicator */
+        .tool-activity {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-muted);
+        }
+        
+        .tool-icon {
+            font-size: 1rem;
+        }
+        
+        .tool-name {
+            font-size: 0.875rem;
+        }
+        
+        .tool-activity .typing-indicator {
+            display: flex;
+            gap: 0.25rem;
+        }
+        
+        .tool-activity .typing-indicator span {
+            width: 6px;
+            height: 6px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        
+        .tool-activity .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .tool-activity .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
     </style>
 </head>
 <body>
@@ -515,6 +547,9 @@
         
         // State
         let ws = null;
+        let isRecording = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
         
         // DOM elements
         const chatMessages = document.getElementById('chatMessages');
@@ -565,8 +600,13 @@
             };
         }
         
+        // Track activity
+        let activityCounter = 0;
+        
         // Handle incoming messages
         function handleMessage(data) {
+            console.log('Event:', data.type, data.data);
+            
             switch (data.type) {
                 case 'session_started':
                     break;
@@ -584,12 +624,27 @@
                     showTypingIndicator();
                     break;
                     
+                case 'tool_call':
+                    showToolActivity(data.data);
+                    break;
+                    
+                case 'tool_result':
+                    hideToolActivity();
+                    break;
+                    
+                case 'kb_queried':
+                    showToolActivity({ tool: 'query_rag', message: 'Searching knowledge base...' });
+                    break;
+                    
+                case 'agent_handoff':
+                    showHandoffActivity(data.data);
+                    break;
+                    
                 case 'transcript':
                     addUserMessage(data.data.text);
                     break;
                     
                 case 'audio_chunk':
-                    // Play audio
                     if (data.data.audio) {
                         playAudio(data.data.audio);
                     }
@@ -599,6 +654,68 @@
                     addSystemMessage(`Error: ${data.data.error}`);
                     break;
             }
+        }
+        
+        // Show tool activity indicator
+        function showToolActivity(data) {
+            removeTypingIndicator();
+            
+            const toolName = data.tool || 'unknown';
+            const displayName = formatToolName(toolName);
+            const icon = getToolIcon(toolName);
+            
+            const indicator = document.createElement('div');
+            indicator.className = 'message assistant thinking';
+            indicator.id = 'typingIndicator';
+            indicator.innerHTML = `
+                <div class="message-content">
+                    <div class="tool-activity">
+                        <span class="tool-icon">${icon}</span>
+                        <span class="tool-name">${displayName}</span>
+                        <div class="typing-indicator"><span></span><span></span><span></span></div>
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(indicator);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Hide tool activity
+        function hideToolActivity() {
+            removeTypingIndicator();
+        }
+        
+        // Show handoff activity
+        function showHandoffActivity(data) {
+            addSystemMessage(`🔄 ${data.from} → ${data.to}`);
+        }
+        
+        // Format tool name for display
+        function formatToolName(toolName) {
+            const names = {
+                'fetch_pr_diff': 'Fetching PR diff...',
+                'fetch_pr_info': 'Getting PR info...',
+                'fetch_pr_comments': 'Reading comments...',
+                'fetch_pr_files': 'Checking files...',
+                'fetch_file_content': 'Reading file...',
+                'query_rag': 'Searching knowledge base...',
+                'index_to_rag': 'Saving context...',
+            };
+            return names[toolName] || `Running ${toolName}...`;
+        }
+        
+        // Get icon for tool
+        function getToolIcon(toolName) {
+            const icons = {
+                'fetch_pr_diff': '📄',
+                'fetch_pr_info': 'ℹ️',
+                'fetch_pr_comments': '💬',
+                'fetch_pr_files': '📁',
+                'fetch_file_content': '📖',
+                'query_rag': '🔍',
+                'index_to_rag': '📥',
+            };
+            return icons[toolName] || '🔧';
         }
         
         // Parse confidence from message text
@@ -698,13 +815,124 @@
             return div.innerHTML;
         }
         
-        // Audio playback (placeholder)
-        function playAudio(base64Audio) {
-            console.log('Audio received', base64Audio.length);
+        // Audio context for playback
+        let audioContext = null;
+        let audioQueue = [];
+        let isPlaying = false;
+        
+        function getAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 24000
+                });
+            }
+            return audioContext;
+        }
+        
+        // Audio playback
+        async function playAudio(base64Audio) {
+            try {
+                const ctx = getAudioContext();
+                if (ctx.state === 'suspended') {
+                    await ctx.resume();
+                }
+                
+                const binaryString = atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                const pcm16 = new Int16Array(bytes.buffer);
+                const float32 = new Float32Array(pcm16.length);
+                for (let i = 0; i < pcm16.length; i++) {
+                    float32[i] = pcm16[i] / 32768.0;
+                }
+                
+                const audioBuffer = ctx.createBuffer(1, float32.length, 24000);
+                audioBuffer.getChannelData(0).set(float32);
+                
+                audioQueue.push(audioBuffer);
+                if (!isPlaying) playNextInQueue();
+            } catch (e) {
+                console.error('Audio playback error:', e);
+            }
+        }
+        
+        function playNextInQueue() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                return;
+            }
+            isPlaying = true;
+            const ctx = getAudioContext();
+            const buffer = audioQueue.shift();
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.onended = playNextInQueue;
+            source.start();
+        }
+        
+        // Microphone recording
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+                });
+                
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+                
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64 = reader.result.split(',')[1];
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'audio', audio: base64, format: 'webm' }));
+                        }
+                    };
+                    reader.readAsDataURL(audioBlob);
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.start();
+                isRecording = true;
+                document.getElementById('micBtn').classList.add('recording');
+                document.getElementById('micBtn').textContent = '⏹';
+            } catch (e) {
+                console.error('Microphone error:', e);
+                addMessage('assistant', 'Could not access microphone. Please check permissions.', 'low');
+            }
+        }
+        
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                isRecording = false;
+                document.getElementById('micBtn').classList.remove('recording');
+                document.getElementById('micBtn').textContent = '🎤';
+            }
+        }
+        
+        function toggleRecording() {
+            if (isRecording) stopRecording();
+            else startRecording();
         }
         
         // Event listeners
         sendBtn.addEventListener('click', sendMessage);
+        
+        if (micBtn) {
+            micBtn.addEventListener('click', toggleRecording);
+        }
+        
+        if (voiceBtn) {
+            voiceBtn.addEventListener('click', toggleRecording);
+        }
         
         messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {

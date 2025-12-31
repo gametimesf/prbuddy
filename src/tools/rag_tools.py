@@ -200,9 +200,32 @@ async def get_readiness_score_impl() -> dict[str, Any]:
         }
 
 
+async def trigger_research_impl(
+    focus: str | None = None,
+) -> dict[str, Any]:
+    """Trigger the Research agent to gather more context.
+    
+    Use this when the user explicitly requests to refresh or gather
+    more context from GitHub, Jira, or other sources.
+    
+    Args:
+        focus: Optional focus area for research (e.g., "comments", "related PRs", "linked issues").
+    
+    Returns:
+        Dict with instructions to hand off to Research agent.
+    """
+    return {
+        "success": True,
+        "action": "handoff_to_research",
+        "message": f"Please hand off to the Research agent to gather more context{f' focusing on: {focus}' if focus else ''}.",
+        "focus": focus,
+    }
+
+
 def register_rag_tools() -> None:
     """Register RAG tools with the ToolRegistry."""
     ToolRegistry.register("query_rag", query_rag_impl)
     ToolRegistry.register("index_to_rag", index_to_rag_impl)
     ToolRegistry.register("get_readiness_score", get_readiness_score_impl)
+    ToolRegistry.register("trigger_research", trigger_research_impl)
 

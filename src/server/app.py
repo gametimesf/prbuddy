@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from ..agents.config_manager import init_filesystem_config_manager
+# Config managers are created in factory functions, no global initialization needed
 from ..agents.tools import init_registries
 from ..observability.logging import configure_logging, get_logger
 from ..rag.schema import create_schema
@@ -60,11 +60,8 @@ async def lifespan(app: FastAPI):
     
     logger.info("Starting PR Buddy server")
     
-    # Initialize agent config manager
-    config_dir = Path(__file__).parent.parent.parent.parent / "config" / "agents"
-    init_filesystem_config_manager(config_dir)
-    
     # Initialize tool registries
+    # Note: Agent systems are created with MultiDirConfigManager in factory functions
     init_registries()
     
     # Connect to Weaviate
@@ -364,6 +361,7 @@ async def _handle_text_session(websocket: WebSocket, session):
 async def _handle_pipeline_session(websocket: WebSocket, session):
     """Handle pipeline-mode WebSocket session."""
     import base64
+    from ..voice.audio_utils import convert_to_pcm_async
     
     runner = session.runner
     
@@ -391,8 +389,18 @@ async def _handle_pipeline_session(websocket: WebSocket, session):
         
         if data.get("type") == "audio":
             # Decode base64 audio
-            audio = base64.b64decode(data.get("audio", ""))
-            await runner.feed_audio(audio)
+            audio_bytes = base64.b64decode(data.get("audio", ""))
+            audio_format = data.get("format", "webm")  # Browser typically sends webm
+            
+            # Use process_audio_chunk for browser-recorded audio (bypasses VAD)
+            # since the browser already handles recording start/stop
+            if hasattr(runner, 'process_audio_chunk'):
+                await runner.process_audio_chunk(audio_bytes, format=audio_format)
+            else:
+                # Fallback: convert to PCM and use VAD-based feed_audio
+                pcm_audio = await convert_to_pcm_async(audio_bytes, audio_format)
+                if pcm_audio:
+                    await runner.feed_audio(pcm_audio)
         elif data.get("type") == "message":
             text = data.get("text", "")
             await runner.send_text(text)
@@ -455,7 +463,7 @@ async def _handle_realtime_session(websocket: WebSocket, session):
 
 
 # Static files
-static_dir = Path(__file__).parent.parent.parent.parent / "static"
+static_dir = Path(__file__).parent.parent.parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
     

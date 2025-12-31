@@ -377,4 +377,97 @@ class WeaviatePRRAGStore:
                 counts[doc_type] = group.total_count or 0
         
         return counts
+    
+    async def save_conversation_history(
+        self,
+        session_type: str,
+        history: list[dict[str, str]],
+    ) -> str:
+        """Save conversation history for session resumption.
+        
+        Args:
+            session_type: 'author' or 'reviewer'.
+            history: List of {role, content} messages.
+        
+        Returns:
+            Document ID.
+        """
+        import json
+        
+        # Delete any existing history for this session type
+        await self.delete_by_type(f"conversation_{session_type}")
+        
+        # Save as JSON in content field
+        content = json.dumps(history)
+        
+        return await self.add_document(
+            doc_type=f"conversation_{session_type}",
+            content=content,
+            metadata={"message_count": len(history)},
+        )
+    
+    async def load_conversation_history(
+        self,
+        session_type: str,
+    ) -> list[dict[str, str]]:
+        """Load conversation history for session resumption.
+        
+        Args:
+            session_type: 'author' or 'reviewer'.
+        
+        Returns:
+            List of {role, content} messages, or empty list if none.
+        """
+        import json
+        
+        collection = self._get_collection()
+        
+        from weaviate.classes.query import Filter
+        response = collection.query.fetch_objects(
+            filters=Filter.by_property("doc_type").equal(f"conversation_{session_type}"),
+            limit=1,
+        )
+        
+        if not response.objects:
+            return []
+        
+        try:
+            content = response.objects[0].properties.get("content", "[]")
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return []
+    
+    async def has_been_researched(self) -> bool:
+        """Check if this PR has been researched before.
+        
+        Returns:
+            True if there's indexed content (diffs, descriptions, etc.)
+        """
+        counts = await self.get_document_types()
+        
+        # Check for research artifacts
+        research_types = {"diff", "description", "comment", "issue"}
+        for doc_type in research_types:
+            if counts.get(doc_type, 0) > 0:
+                return True
+        
+        return False
+    
+    async def get_research_summary(self) -> dict[str, Any]:
+        """Get a summary of what's been researched.
+        
+        Returns:
+            Dict with counts and timestamps.
+        """
+        counts = await self.get_document_types()
+        total = sum(counts.values())
+        
+        return {
+            "has_content": total > 0,
+            "total_documents": total,
+            "document_types": counts,
+            "has_diff": counts.get("diff", 0) > 0,
+            "has_author_explanations": counts.get("author_explanation", 0) > 0,
+            "explanation_count": counts.get("author_explanation", 0),
+        }
 

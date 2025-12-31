@@ -36,12 +36,20 @@ instructions: |
   - Main purpose of the PR
   - Any linked issues or discussions
   - What has been indexed
+  
+  ## Returning Control
+  After completing research:
+  - For author sessions: Hand off back to AuthorTraining
+  - For reviewer sessions: Hand off back to ReviewerQA
+  - Just complete your summary and the appropriate agent will continue
 
 handoff_trigger: >-
   Research agent for gathering PR context from GitHub.
   Hand off here when more context is needed about the PR.
 
-routes_to: []
+routes_to:
+  - AuthorTraining
+  - ReviewerQA
 
 tools:
   - fetch_pr_diff
@@ -50,7 +58,8 @@ tools:
   - fetch_pr_files
   - index_to_rag
 
-mcp_servers: []
+mcp_servers:
+  - unblocked
 
 is_entry_point: false
 

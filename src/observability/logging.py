@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import logging
+import warnings
 from typing import Any
 
 import structlog
@@ -41,6 +42,14 @@ def configure_logging(verbose: int = 0) -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("weaviate").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+    
+    # Suppress deprecation warnings from websockets library (dependency issue)
+    warnings.filterwarnings(
+        "ignore",
+        message="remove second argument of ws_handler",
+        category=DeprecationWarning,
+        module="websockets",
+    )
     
     # Configure structlog
     processors = [

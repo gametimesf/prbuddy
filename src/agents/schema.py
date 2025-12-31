@@ -90,10 +90,15 @@ class AgentSystemSchema(BaseModel):
                 seen.add(agent.name)
         
         # Check that all routes_to references exist
+        # Note: Unknown routes are warnings, not errors (for shared agents across systems)
         for agent in self.agents:
             for target in agent.routes_to:
                 if target not in agent_names:
-                    errors.append(f"Agent '{agent.name}' routes to unknown agent '{target}'")
+                    # Just log a warning instead of failing validation
+                    # This allows shared agents (like Research) to route to
+                    # agents that only exist in specific systems
+                    import logging
+                    logging.warning(f"Agent '{agent.name}' routes to unknown agent '{target}' - route will be ignored")
         
         # Check exactly one entry point
         entry_points = [a.name for a in self.agents if a.is_entry_point]

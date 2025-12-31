@@ -21,6 +21,7 @@ from agents.realtime.handoffs import realtime_handoff
 from .config_manager import (
     AgentConfigManager,
     FileSystemConfigManager,
+    MultiDirConfigManager,
     get_config_manager,
     set_config_manager,
 )
@@ -365,5 +366,151 @@ def create_realtime_agent_system_sync(
     import asyncio
     return asyncio.get_event_loop().run_until_complete(
         create_realtime_agent_system(runtime_mcp_servers)
+    )
+
+
+# ============================================================================
+# PR Buddy System-Specific Factory Functions
+# ============================================================================
+
+def _get_config_base_path() -> Path:
+    """Get the base path for config directories.
+    
+    Returns path relative to project root, handling both runtime and test scenarios.
+    """
+    # Try to find config relative to this file's location
+    # factory.py is at: prbuddy/src/agents/factory.py
+    # config is at: prbuddy/config/agents/
+    module_path = Path(__file__).parent.parent.parent / "config" / "agents"
+    if module_path.exists():
+        return module_path
+    
+    # Fallback to relative path (for tests with temp directories)
+    return Path("config/agents")
+
+
+async def create_author_system(
+    runtime_mcp_servers: dict[str, MCPServer] | None = None,
+    tool_overrides: dict[str, Callable[..., Any]] | None = None,
+    config_base: Path | None = None,
+) -> AgentSystem:
+    """Create the author training agent system.
+    
+    Loads agents from common/ and author/ directories.
+    Entry point is AuthorTraining.
+    
+    Args:
+        runtime_mcp_servers: Optional dict of runtime MCP servers.
+        tool_overrides: Optional dict mapping tool names to mock implementations.
+        config_base: Optional base path for config directories (for testing).
+    
+    Returns:
+        AgentSystem configured for author training sessions.
+    """
+    base = config_base or _get_config_base_path()
+    
+    config_manager = MultiDirConfigManager([
+        base / "common",
+        base / "author",
+    ])
+    
+    return await create_agent_system(
+        runtime_mcp_servers=runtime_mcp_servers,
+        config_manager=config_manager,
+        tool_overrides=tool_overrides,
+        entry_point_override="AuthorTraining",
+    )
+
+
+async def create_reviewer_system(
+    runtime_mcp_servers: dict[str, MCPServer] | None = None,
+    tool_overrides: dict[str, Callable[..., Any]] | None = None,
+    config_base: Path | None = None,
+) -> AgentSystem:
+    """Create the reviewer Q&A agent system.
+    
+    Loads agents from common/ and reviewer/ directories.
+    Entry point is ReviewerQA.
+    
+    Args:
+        runtime_mcp_servers: Optional dict of runtime MCP servers.
+        tool_overrides: Optional dict mapping tool names to mock implementations.
+        config_base: Optional base path for config directories (for testing).
+    
+    Returns:
+        AgentSystem configured for reviewer Q&A sessions.
+    """
+    base = config_base or _get_config_base_path()
+    
+    config_manager = MultiDirConfigManager([
+        base / "common",
+        base / "reviewer",
+    ])
+    
+    return await create_agent_system(
+        runtime_mcp_servers=runtime_mcp_servers,
+        config_manager=config_manager,
+        tool_overrides=tool_overrides,
+        entry_point_override="ReviewerQA",
+    )
+
+
+async def create_author_realtime_system(
+    runtime_mcp_servers: dict[str, MCPServer] | None = None,
+    tool_overrides: dict[str, Callable[..., Any]] | None = None,
+    config_base: Path | None = None,
+) -> RealtimeAgentSystem:
+    """Create the author training voice agent system.
+    
+    Args:
+        runtime_mcp_servers: Optional dict of runtime MCP servers.
+        tool_overrides: Optional dict mapping tool names to mock implementations.
+        config_base: Optional base path for config directories (for testing).
+    
+    Returns:
+        RealtimeAgentSystem configured for author training voice sessions.
+    """
+    base = config_base or _get_config_base_path()
+    
+    config_manager = MultiDirConfigManager([
+        base / "common",
+        base / "author",
+    ])
+    
+    return await create_realtime_agent_system(
+        runtime_mcp_servers=runtime_mcp_servers,
+        config_manager=config_manager,
+        tool_overrides=tool_overrides,
+        entry_point_override="AuthorTraining",
+    )
+
+
+async def create_reviewer_realtime_system(
+    runtime_mcp_servers: dict[str, MCPServer] | None = None,
+    tool_overrides: dict[str, Callable[..., Any]] | None = None,
+    config_base: Path | None = None,
+) -> RealtimeAgentSystem:
+    """Create the reviewer Q&A voice agent system.
+    
+    Args:
+        runtime_mcp_servers: Optional dict of runtime MCP servers.
+        tool_overrides: Optional dict mapping tool names to mock implementations.
+        config_base: Optional base path for config directories (for testing).
+    
+    Returns:
+        RealtimeAgentSystem configured for reviewer Q&A voice sessions.
+    """
+    base = config_base or _get_config_base_path()
+    
+    config_manager = MultiDirConfigManager([
+        base / "common",
+        base / "reviewer",
+    ])
+    
+    return await create_realtime_agent_system(
+        runtime_mcp_servers=runtime_mcp_servers,
+        config_manager=config_manager,
+        tool_overrides=tool_overrides,
+        entry_point_override="ReviewerQA",
     )
 
