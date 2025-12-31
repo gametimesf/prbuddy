@@ -548,8 +548,20 @@
         // State
         let ws = null;
         let isRecording = false;
-        let mediaRecorder = null;
-        let audioChunks = [];
+        let isPlaying = false;
+        
+        // Audio recording (using AudioWorklet for continuous PCM16 streaming)
+        let recordContext = null;
+        let mediaStream = null;
+        let audioWorklet = null;
+        
+        // Audio playback
+        let playbackContext = null;
+        let audioQueue = [];
+        
+        // Sample rates - set by server in 'ready' event
+        let inputSampleRate = 24000;   // For mic/Whisper
+        let outputSampleRate = 16000;  // For TTS playback (16kHz for Polly)
         
         // DOM elements
         const chatMessages = document.getElementById('chatMessages');
@@ -603,11 +615,27 @@
         // Track activity
         let activityCounter = 0;
         
+        // Update connection status display
+        function updateStatus(state, text) {
+            statusDot.className = 'status-dot ' + state;
+            statusText.textContent = text;
+        }
+        
         // Handle incoming messages
         function handleMessage(data) {
             console.log('Event:', data.type, data.data);
             
             switch (data.type) {
+                case 'ready':
+                    // Session ready - get audio config from server
+                    if (data.audio_config) {
+                        inputSampleRate = data.audio_config.input_sample_rate || 24000;
+                        outputSampleRate = data.audio_config.output_sample_rate || 16000;
+                        console.log(`Audio config: input=${inputSampleRate}Hz, output=${outputSampleRate}Hz`);
+                    }
+                    updateStatus('connected', 'Connected');
+                    break;
+                    
                 case 'session_started':
                     break;
                     
@@ -641,12 +669,29 @@
                     break;
                     
                 case 'transcript':
-                    addUserMessage(data.data.text);
+                    // Pipeline mode sends text/role at top level, text mode uses data.data
+                    const transcriptText = data.text || (data.data && data.data.text);
+                    const transcriptRole = data.role || 'user';
+                    if (transcriptText) {
+                        if (transcriptRole === 'assistant') {
+                            removeTypingIndicator();
+                            addAssistantMessage(transcriptText);
+                        } else {
+                            addUserMessage(transcriptText);
+                        }
+                    }
                     break;
                     
                 case 'audio_chunk':
-                    if (data.data.audio) {
+                    if (data.data && data.data.audio) {
                         playAudio(data.data.audio);
+                    }
+                    break;
+                    
+                case 'audio':
+                    // Pipeline mode audio response
+                    if (data.audio) {
+                        playAudio(data.audio);
                     }
                     break;
                     
@@ -815,106 +860,226 @@
             return div.innerHTML;
         }
         
-        // Audio context for playback
-        let audioContext = null;
-        let audioQueue = [];
-        let isPlaying = false;
-        
-        function getAudioContext() {
-            if (!audioContext) {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                    sampleRate: 24000
-                });
-            }
-            return audioContext;
-        }
-        
-        // Audio playback
+        // Audio playback - plays PCM16 chunks from server
         async function playAudio(base64Audio) {
+            // Skip audio playback in text mode
+            if (mode === 'text') return;
+            
+            // Decode base64 to ArrayBuffer
+            const binaryString = atob(base64Audio);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            // Queue audio for playback
+            audioQueue.push(bytes.buffer);
+
+            if (!isPlaying) {
+                playNextAudio();
+            }
+        }
+
+        async function playNextAudio() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                updateStatus('connected', 'Connected');
+                return;
+            }
+
+            isPlaying = true;
+            updateStatus('connected', 'Playing...');
+            const audioData = audioQueue.shift();
+
             try {
-                const ctx = getAudioContext();
-                if (ctx.state === 'suspended') {
-                    await ctx.resume();
+                // Create separate playback AudioContext if needed
+                if (!playbackContext || playbackContext.state === 'closed') {
+                    playbackContext = new AudioContext({ sampleRate: outputSampleRate });
                 }
                 
-                const binaryString = atob(base64Audio);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
+                // Resume if suspended (browser autoplay policy)
+                if (playbackContext.state === 'suspended') {
+                    await playbackContext.resume();
                 }
-                
-                const pcm16 = new Int16Array(bytes.buffer);
+
+                // Convert PCM16 to float32
+                const pcm16 = new Int16Array(audioData);
                 const float32 = new Float32Array(pcm16.length);
                 for (let i = 0; i < pcm16.length; i++) {
                     float32[i] = pcm16[i] / 32768.0;
                 }
-                
-                const audioBuffer = ctx.createBuffer(1, float32.length, 24000);
+
+                // Create audio buffer at the correct sample rate
+                const audioBuffer = playbackContext.createBuffer(1, float32.length, outputSampleRate);
                 audioBuffer.getChannelData(0).set(float32);
-                
-                audioQueue.push(audioBuffer);
-                if (!isPlaying) playNextInQueue();
-            } catch (e) {
-                console.error('Audio playback error:', e);
+
+                // Play
+                const source = playbackContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(playbackContext.destination);
+                source.onended = playNextAudio;
+                source.start();
+
+            } catch (error) {
+                console.error('Playback error:', error);
+                playNextAudio(); // Try next chunk
             }
         }
         
-        function playNextInQueue() {
-            if (audioQueue.length === 0) {
-                isPlaying = false;
-                return;
-            }
-            isPlaying = true;
-            const ctx = getAudioContext();
-            const buffer = audioQueue.shift();
-            const source = ctx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(ctx.destination);
-            source.onended = playNextInQueue;
-            source.start();
-        }
-        
-        // Microphone recording
+        // Microphone recording - uses AudioWorklet for continuous PCM16 streaming
         async function startRecording() {
+            if (isRecording || !ws) return;
+
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+                // Request microphone with echo cancellation and noise suppression
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: inputSampleRate,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    },
                 });
+
+                // Create AudioContext for recording at input sample rate
+                recordContext = new AudioContext({ sampleRate: inputSampleRate });
+                const source = recordContext.createMediaStreamSource(mediaStream);
                 
-                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-                audioChunks = [];
-                
-                mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
-                
-                mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        const base64 = reader.result.split(',')[1];
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: 'audio', audio: base64, format: 'webm' }));
+                // Use AudioWorkletNode if available, fallback to ScriptProcessor
+                if (recordContext.audioWorklet) {
+                    await setupAudioWorklet(source);
+                } else {
+                    setupScriptProcessor(source);
+                }
+
+                isRecording = true;
+                micBtn.classList.add('recording');
+                micBtn.textContent = '⏹';
+                updateStatus('recording', 'Recording...');
+
+            } catch (error) {
+                console.error('Recording error:', error);
+                addMessage('assistant', `Microphone error: ${error.message}`, 'low');
+            }
+        }
+        
+        async function setupAudioWorklet(source) {
+            // Define the worklet processor inline as a blob
+            const workletCode = `
+                class PCMProcessor extends AudioWorkletProcessor {
+                    constructor() {
+                        super();
+                        this.buffer = [];
+                        this.bufferSize = 4096;
+                    }
+                    
+                    process(inputs, outputs, parameters) {
+                        const input = inputs[0];
+                        if (input && input[0]) {
+                            // Accumulate samples
+                            for (let i = 0; i < input[0].length; i++) {
+                                this.buffer.push(input[0][i]);
+                            }
+                            
+                            // Send when buffer is full
+                            while (this.buffer.length >= this.bufferSize) {
+                                const chunk = this.buffer.splice(0, this.bufferSize);
+                                this.port.postMessage({ audio: new Float32Array(chunk) });
+                            }
                         }
-                    };
-                    reader.readAsDataURL(audioBlob);
-                    stream.getTracks().forEach(track => track.stop());
+                        return true;
+                    }
+                }
+                registerProcessor('pcm-processor', PCMProcessor);
+            `;
+            
+            const blob = new Blob([workletCode], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            
+            try {
+                await recordContext.audioWorklet.addModule(url);
+                audioWorklet = new AudioWorkletNode(recordContext, 'pcm-processor');
+                
+                audioWorklet.port.onmessage = (e) => {
+                    if (!isRecording || !ws || ws.readyState !== WebSocket.OPEN) return;
+                    
+                    const float32 = e.data.audio;
+                    // Convert float32 to int16
+                    const pcm16 = new Int16Array(float32.length);
+                    for (let i = 0; i < float32.length; i++) {
+                        const s = Math.max(-1, Math.min(1, float32[i]));
+                        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    // Send to server
+                    const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
+                    ws.send(JSON.stringify({
+                        type: 'audio',
+                        audio: base64,
+                    }));
                 };
                 
-                mediaRecorder.start();
-                isRecording = true;
-                document.getElementById('micBtn').classList.add('recording');
-                document.getElementById('micBtn').textContent = '⏹';
-            } catch (e) {
-                console.error('Microphone error:', e);
-                addMessage('assistant', 'Could not access microphone. Please check permissions.', 'low');
+                source.connect(audioWorklet);
+                // Don't connect to destination (we don't want to hear ourselves)
+            } catch (err) {
+                console.warn('AudioWorklet failed, falling back to ScriptProcessor:', err);
+                setupScriptProcessor(source);
+            } finally {
+                URL.revokeObjectURL(url);
             }
         }
         
+        function setupScriptProcessor(source) {
+            // Fallback for older browsers (deprecated but works)
+            const processor = recordContext.createScriptProcessor(4096, 1, 1);
+            
+            processor.onaudioprocess = (e) => {
+                if (!isRecording || !ws || ws.readyState !== WebSocket.OPEN) return;
+                
+                const inputData = e.inputBuffer.getChannelData(0);
+                
+                // Convert float32 to int16
+                const pcm16 = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {
+                    const s = Math.max(-1, Math.min(1, inputData[i]));
+                    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                
+                // Send to server
+                const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
+                ws.send(JSON.stringify({
+                    type: 'audio',
+                    audio: base64,
+                }));
+            };
+
+            source.connect(processor);
+            // Connect to a silent destination to keep processor running
+            processor.connect(recordContext.destination);
+        }
+
         function stopRecording() {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-                isRecording = false;
-                document.getElementById('micBtn').classList.remove('recording');
-                document.getElementById('micBtn').textContent = '🎤';
+            if (!isRecording) return;
+
+            isRecording = false;
+            micBtn.classList.remove('recording');
+            micBtn.textContent = '🎤';
+            updateStatus('connected', 'Connected');
+
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            
+            if (audioWorklet) {
+                audioWorklet.disconnect();
+                audioWorklet = null;
+            }
+
+            if (recordContext && recordContext.state !== 'closed') {
+                recordContext.close();
+                recordContext = null;
             }
         }
         

@@ -42,32 +42,32 @@ class WhisperSTTProvider(STTProvider):
     def supported_formats(self) -> list[str]:
         return ["wav", "mp3", "m4a", "webm", "mp4", "mpeg", "mpga", "oga", "ogg"]
     
-    async def transcribe(self, audio: bytes, format: str = "pcm") -> str:
+    async def transcribe(self, audio: bytes, audio_format: str = "pcm") -> str:
         """Transcribe audio bytes.
         
         Args:
             audio: Audio bytes (PCM16 at 24kHz or other supported format).
-            format: Audio format - 'pcm', 'wav', 'webm', etc.
+            audio_format: Audio format - 'pcm', 'wav', 'webm', etc.
         
         Returns:
             Transcribed text.
         """
-        if format == "pcm":
+        if audio_format == "pcm":
             # Convert PCM16 to WAV format for the API
             wav_buffer = self._pcm_to_wav(audio)
             wav_buffer.seek(0)
             file_tuple = ("audio.wav", wav_buffer, "audio/wav")
-        elif format == "webm":
+        elif audio_format == "webm":
             # WebM can be sent directly to Whisper
             import io
             file_tuple = ("audio.webm", io.BytesIO(audio), "audio/webm")
-        elif format == "wav":
+        elif audio_format == "wav":
             import io
             file_tuple = ("audio.wav", io.BytesIO(audio), "audio/wav")
         else:
             # Try to send as-is with generic type
             import io
-            file_tuple = (f"audio.{format}", io.BytesIO(audio), f"audio/{format}")
+            file_tuple = (f"audio.{audio_format}", io.BytesIO(audio), f"audio/{audio_format}")
         
         # Call Whisper API
         kwargs = {"model": self._model, "file": file_tuple}

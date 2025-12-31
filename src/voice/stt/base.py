@@ -25,11 +25,12 @@ class STTProvider(ABC):
         ...
     
     @abstractmethod
-    async def transcribe(self, audio: bytes) -> str:
+    async def transcribe(self, audio: bytes, audio_format: str = "pcm") -> str:
         """Transcribe audio bytes to text.
         
         Args:
             audio: Audio bytes in the expected format.
+            audio_format: Audio format - 'pcm', 'wav', 'webm', etc.
         
         Returns:
             Transcribed text.

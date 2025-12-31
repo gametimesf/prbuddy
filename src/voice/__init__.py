@@ -6,7 +6,7 @@ for voice-enabled interactions.
 
 from .config import (
     PollyVoiceConfig,
-    ElevenLabsVoiceConfig,
+    OpenAITTSConfig,
     WhisperSTTConfig,
     TTSVoiceConfig,
     STTVoiceConfig,
@@ -16,7 +16,7 @@ from .factory import create_tts, create_stt
 __all__ = [
     # Config
     "PollyVoiceConfig",
-    "ElevenLabsVoiceConfig",
+    "OpenAITTSConfig",
     "WhisperSTTConfig",
     "TTSVoiceConfig",
     "STTVoiceConfig",

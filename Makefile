@@ -32,11 +32,11 @@ weaviate-stop:
 
 # Run development server
 dev: weaviate
-	uvicorn src.server.app:app --reload --port 8000
+	uv run uvicorn src.server.app:app --reload --port 8000
 
 # Run tests
 test:
-	pytest tests/ -v
+	uv run pytest tests/ -v
 
 # Clean up
 clean:

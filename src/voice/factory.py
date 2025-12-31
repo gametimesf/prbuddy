@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .config import PollyVoiceConfig, ElevenLabsVoiceConfig, WhisperSTTConfig, TTSVoiceConfig, STTVoiceConfig
+from .config import PollyVoiceConfig, OpenAITTSConfig, WhisperSTTConfig, TTSVoiceConfig, STTVoiceConfig
 
 if TYPE_CHECKING:
     from .tts.base import TTSProvider, TTSConfig
@@ -27,6 +27,18 @@ def create_tts(config: TTSVoiceConfig) -> tuple["TTSProvider", "TTSConfig"]:
     Raises:
         ValueError: If config type is not recognized.
     """
+    if isinstance(config, OpenAITTSConfig):
+        from .tts.openai_tts import OpenAITTSProvider
+        from .tts.base import TTSConfig
+        
+        return (
+            OpenAITTSProvider(model=config.model),
+            TTSConfig(
+                voice_id=config.voice_id,
+                sample_rate=config.sample_rate,
+            ),
+        )
+    
     if isinstance(config, PollyVoiceConfig):
         from .tts.polly import PollyTTSProvider
         from .tts.base import TTSConfig
@@ -39,19 +51,17 @@ def create_tts(config: TTSVoiceConfig) -> tuple["TTSProvider", "TTSConfig"]:
             ),
         )
     
-    if isinstance(config, ElevenLabsVoiceConfig):
-        from .tts.elevenlabs import ElevenLabsTTSProvider
-        from .tts.base import TTSConfig
-        
-        return (
-            ElevenLabsTTSProvider(),
-            TTSConfig(
-                voice_id=config.voice_id,
-                sample_rate=config.sample_rate,
-            ),
-        )
+    # Default to OpenAI TTS if unknown config
+    from .tts.openai_tts import OpenAITTSProvider
+    from .tts.base import TTSConfig
     
-    raise ValueError(f"Unknown TTS config type: {type(config).__name__}")
+    return (
+        OpenAITTSProvider(),
+        TTSConfig(
+            voice_id="alloy",
+            sample_rate=24000,
+        ),
+    )
 
 
 def create_stt(config: STTVoiceConfig) -> "STTProvider":

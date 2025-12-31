@@ -21,12 +21,12 @@ class PollyVoiceConfig:
 
 
 @dataclass
-class ElevenLabsVoiceConfig:
-    """ElevenLabs TTS configuration."""
+class OpenAITTSConfig:
+    """OpenAI TTS configuration."""
     
-    voice_id: str = "Rachel"  # Default voice name
-    model_id: str = "eleven_multilingual_v2"  # Latest multilingual model
-    sample_rate: int = 16000  # 16kHz for consistency with Polly
+    voice_id: str = "alloy"  # alloy, echo, fable, onyx, nova, shimmer
+    model: str = "tts-1"  # tts-1 or tts-1-hd
+    sample_rate: int = 24000  # OpenAI TTS outputs at 24kHz
 
 
 @dataclass
@@ -38,6 +38,6 @@ class WhisperSTTConfig:
 
 
 # Type aliases for extensibility
-TTSVoiceConfig = Union[PollyVoiceConfig, ElevenLabsVoiceConfig]
-STTVoiceConfig = Union[WhisperSTTConfig]
+TTSVoiceConfig = Union[PollyVoiceConfig, OpenAITTSConfig]
+STTVoiceConfig = WhisperSTTConfig
 

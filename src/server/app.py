@@ -27,7 +27,7 @@ from ..sessions.manager import PRSessionManager, PRSessionConfig, PRSessionMode
 from ..sessions.pr_context import PRContext
 from ..sessions.text_session import TextEvent, TextEventType
 from ..sessions.pipeline import PipelineEvent, PipelineEventType
-from ..voice.config import PollyVoiceConfig, ElevenLabsVoiceConfig, WhisperSTTConfig
+from ..voice.config import PollyVoiceConfig, OpenAITTSConfig, WhisperSTTConfig
 from .admin import router as admin_router
 
 
@@ -128,9 +128,9 @@ class CreateSessionRequest(BaseModel):
         default="author",
         description="Session type: author (training) or reviewer (Q&A)"
     )
-    tts_provider: Literal["polly", "elevenlabs"] | None = Field(
+    tts_provider: Literal["openai", "polly"] | None = Field(
         default=None,
-        description="TTS provider for voice modes"
+        description="TTS provider for voice modes (openai is default)"
     )
     voice_id: str | None = Field(
         default=None,
@@ -200,10 +200,13 @@ async def create_session(request: CreateSessionRequest):
     mode = PRSessionMode(request.mode)
     
     tts_config = None
-    if request.tts_provider == "polly":
-        tts_config = PollyVoiceConfig(voice_id=request.voice_id or "Joanna")
-    elif request.tts_provider == "elevenlabs":
-        tts_config = ElevenLabsVoiceConfig(voice_id=request.voice_id or "Rachel")
+    if mode == PRSessionMode.PIPELINE:
+        # Use OpenAI TTS by default for voice mode, or Polly if explicitly requested
+        if request.tts_provider == "polly":
+            tts_config = PollyVoiceConfig(voice_id=request.voice_id or "Joanna")
+        else:
+            # Default to OpenAI TTS - works with existing OpenAI credentials
+            tts_config = OpenAITTSConfig(voice_id=request.voice_id or "alloy")
     
     config = PRSessionConfig(
         mode=mode,
@@ -334,6 +337,12 @@ async def _handle_text_session(websocket: WebSocket, session):
     """Handle text-mode WebSocket session."""
     runner = session.runner
     
+    # Send ready event (no audio config for text mode)
+    await websocket.send_json({
+        "type": "ready",
+        "audio_config": None,  # No audio in text mode
+    })
+    
     # Set up event callback
     async def on_event(event: TextEvent):
         await websocket.send_json({
@@ -359,54 +368,114 @@ async def _handle_text_session(websocket: WebSocket, session):
 
 
 async def _handle_pipeline_session(websocket: WebSocket, session):
-    """Handle pipeline-mode WebSocket session."""
+    """Handle pipeline-mode WebSocket session.
+    
+    Uses PipelineSession which handles VAD, buffering, STT, agent execution,
+    and TTS. This handler translates between WebSocket messages and pipeline events.
+    """
     import base64
-    from ..voice.audio_utils import convert_to_pcm_async
+    from ..sessions.pipeline import PipelineEventType
     
     runner = session.runner
     
-    # Set up event callback
-    async def on_event(event: PipelineEvent):
-        data = event.data.copy()
+    # Get sample rate from tts_config if available
+    output_sample_rate = 16000  # Default for Polly
+    if hasattr(session.config, 'tts_config') and session.config.tts_config:
+        if hasattr(session.config.tts_config, 'sample_rate'):
+            output_sample_rate = session.config.tts_config.sample_rate
+    
+    # Send ready event with audio config
+    await websocket.send_json({
+        "type": "ready",
+        "audio_config": {
+            "input_sample_rate": 24000,  # For mic/Whisper
+            "output_sample_rate": output_sample_rate,  # From session config
+        }
+    })
+    
+    # Event handler - translate pipeline events to WebSocket messages
+    async def on_event(event) -> None:
+        if event.type == PipelineEventType.TRANSCRIPT:
+            text = event.data.get("text", "")
+            if text != "[session_start]":  # Don't send internal trigger
+                await websocket.send_json({
+                    "type": "transcript",
+                    "role": "user",
+                    "text": text,
+                })
         
-        # Encode audio as base64
-        if "audio" in data:
-            data["audio"] = base64.b64encode(data["audio"]).decode("utf-8")
+        elif event.type == PipelineEventType.AGENT_RESPONSE:
+            text = event.data.get("text", "")
+            agent = event.data.get("agent", "Agent")
+            await websocket.send_json({
+                "type": "transcript",
+                "role": "assistant",
+                "text": text,
+                "agent": agent,
+            })
         
-        await websocket.send_json({
-            "type": event.type.value,
-            "data": data,
-        })
+        elif event.type == PipelineEventType.AUDIO_CHUNK:
+            audio = event.data.get("audio", b"")
+            audio_b64 = base64.b64encode(audio).decode()
+            await websocket.send_json({
+                "type": "audio",
+                "audio": audio_b64,
+            })
+        
+        elif event.type == PipelineEventType.AGENT_HANDOFF:
+            await websocket.send_json({
+                "type": "agent_handoff",
+                "data": event.data,
+            })
+        
+        elif event.type == PipelineEventType.TOOL_CALL:
+            await websocket.send_json({
+                "type": "tool_call",
+                "data": event.data,
+            })
+        
+        elif event.type == PipelineEventType.TOOL_RESULT:
+            await websocket.send_json({
+                "type": "tool_result",
+                "data": event.data,
+            })
+        
+        elif event.type == PipelineEventType.ERROR:
+            await websocket.send_json({
+                "type": "error",
+                "message": event.data.get("error", "Unknown error"),
+            })
     
     runner._on_event = on_event
     
-    # Send greeting
+    # Trigger initial greeting
     await runner.trigger_greeting()
     
     # Message loop
-    while True:
-        data = await websocket.receive_json()
-        
-        if data.get("type") == "audio":
-            # Decode base64 audio
-            audio_bytes = base64.b64decode(data.get("audio", ""))
-            audio_format = data.get("format", "webm")  # Browser typically sends webm
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
             
-            # Use process_audio_chunk for browser-recorded audio (bypasses VAD)
-            # since the browser already handles recording start/stop
-            if hasattr(runner, 'process_audio_chunk'):
-                await runner.process_audio_chunk(audio_bytes, format=audio_format)
-            else:
-                # Fallback: convert to PCM and use VAD-based feed_audio
-                pcm_audio = await convert_to_pcm_async(audio_bytes, audio_format)
-                if pcm_audio:
-                    await runner.feed_audio(pcm_audio)
-        elif data.get("type") == "message":
-            text = data.get("text", "")
-            await runner.send_text(text)
-        elif data.get("type") == "end":
-            await runner.end_session()
-            break
+            if msg_type == "audio":
+                # Decode base64 PCM16 audio and feed to pipeline VAD
+                audio_b64 = data.get("audio", "")
+                audio_bytes = base64.b64decode(audio_b64)
+                await runner.feed_audio(audio_bytes)
+            
+            elif msg_type == "text" or msg_type == "message":
+                text = data.get("text", "")
+                if text:
+                    await runner.send_text(text)
+            
+            elif msg_type == "ping":
+                await websocket.send_json({"type": "pong"})
+            
+            elif msg_type == "close" or msg_type == "end":
+                break
+    
+    except WebSocketDisconnect:
+        raise
 
 
 async def _handle_realtime_session(websocket: WebSocket, session):

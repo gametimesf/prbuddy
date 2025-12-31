@@ -75,10 +75,10 @@ class PipelineSession:
     and silence for natural conversation flow.
     """
     
-    # VAD thresholds (adjust based on testing)
-    VAD_SILENCE_THRESHOLD = 0.01  # RMS below this = silence
-    VAD_SPEECH_FRAMES = 3  # Frames of speech to start recording
-    VAD_SILENCE_FRAMES = 15  # Frames of silence to stop recording
+    # VAD constants (aligned with fan-ops-voice)
+    SILENCE_THRESHOLD = 1.5  # seconds of silence before processing
+    ENERGY_THRESHOLD = 800   # RMS threshold for speech detection
+    MIN_AUDIO_LENGTH = 4800  # Minimum bytes (~0.1s at 24kHz 16-bit)
     
     def __init__(
         self,
@@ -110,16 +110,16 @@ class PipelineSession:
         self.pr_context = pr_context
         self._on_event = on_event
         
-        # Audio buffer for collecting speech
+        # VAD state
         self._audio_buffer: list[bytes] = []
+        self._last_audio_time = 0.0
         self._is_speaking = False
-        self._speech_frames = 0
-        self._silence_frames = 0
+        self._is_processing = False
+        self._is_playing = False
         
         # Conversation state
         self._history: list[dict[str, str]] = []
         self._current_agent = agent
-        self._is_processing = False
     
     async def _emit(self, event_type: PipelineEventType, data: dict[str, Any] | None = None) -> None:
         """Emit an event."""
@@ -127,71 +127,56 @@ class PipelineSession:
             event = PipelineEvent(type=event_type, data=data or {})
             await self._on_event(event)
     
-    def _calculate_rms(self, audio: bytes) -> float:
-        """Calculate RMS (volume) of audio samples.
+    @staticmethod
+    def _get_audio_energy(audio_data: bytes) -> float:
+        """Calculate RMS energy to detect speech vs silence.
         
         Args:
-            audio: PCM16 audio bytes.
+            audio_data: PCM16 audio bytes.
         
         Returns:
-            RMS value (0.0 to 1.0).
+            Raw RMS energy value.
         """
-        if len(audio) < 2:
+        if len(audio_data) < 2:
             return 0.0
-        
-        # Convert bytes to 16-bit samples
         import struct
-        samples = struct.unpack(f"<{len(audio)//2}h", audio)
-        
-        # Calculate RMS
+        samples = struct.unpack(f"<{len(audio_data)//2}h", audio_data)
         if not samples:
             return 0.0
-        
-        sum_squares = sum(s * s for s in samples)
-        rms = (sum_squares / len(samples)) ** 0.5
-        
-        # Normalize to 0-1 range (16-bit max is 32767)
-        return rms / 32767.0
+        return (sum(s * s for s in samples) / len(samples)) ** 0.5
     
     async def feed_audio(self, audio_bytes: bytes) -> None:
-        """Feed audio data into the pipeline.
+        """Feed audio chunk into the pipeline.
         
-        Performs VAD and collects speech, then processes when
-        speech ends.
+        The pipeline will buffer audio, detect speech/silence,
+        and process when appropriate.
         
         Args:
             audio_bytes: PCM16 audio chunk.
         """
-        if self._is_processing:
-            return  # Don't collect while processing
+        import time
         
-        rms = self._calculate_rms(audio_bytes)
-        is_speech = rms > self.VAD_SILENCE_THRESHOLD
+        if self._is_processing or self._is_playing:
+            # Don't accumulate while processing or playing
+            return
         
-        if is_speech:
-            self._speech_frames += 1
-            self._silence_frames = 0
+        energy = self._get_audio_energy(audio_bytes)
+        current_time = time.time()
+        
+        if energy > self.ENERGY_THRESHOLD:
+            # Speech detected
+            if not self._is_speaking:
+                await self._emit(PipelineEventType.LISTENING)
+            self._is_speaking = True
+            self._audio_buffer.append(audio_bytes)
+            self._last_audio_time = current_time
+        elif self._is_speaking:
+            # Still accumulating during brief pauses
+            self._audio_buffer.append(audio_bytes)
             
-            # Start recording after threshold
-            if self._speech_frames >= self.VAD_SPEECH_FRAMES:
-                if not self._is_speaking:
-                    self._is_speaking = True
-                    await self._emit(PipelineEventType.LISTENING)
-                
-                self._audio_buffer.append(audio_bytes)
-        else:
-            self._silence_frames += 1
-            
-            if self._is_speaking:
-                self._audio_buffer.append(audio_bytes)
-                
-                # End of speech detected
-                if self._silence_frames >= self.VAD_SILENCE_FRAMES:
-                    self._is_speaking = False
-                    self._speech_frames = 0
-                    
-                    # Process the collected audio
-                    await self._process_audio()
+            # Check for silence timeout
+            if current_time - self._last_audio_time > self.SILENCE_THRESHOLD:
+                await self._process_audio()
     
     async def process_audio_chunk(self, audio: bytes, format: str = "webm") -> None:
         """Process a complete audio chunk (e.g., from browser recording).
@@ -211,7 +196,7 @@ class PipelineSession:
         
         try:
             # Transcribe directly (Whisper supports webm)
-            transcript = await self.stt.transcribe(audio, format=format)
+            transcript = await self.stt.transcribe(audio, audio_format=format)
             
             if not transcript.strip():
                 self._is_processing = False
@@ -233,9 +218,18 @@ class PipelineSession:
     async def _process_audio(self) -> None:
         """Process collected audio through the pipeline (via VAD)."""
         if not self._audio_buffer:
+            self._is_speaking = False
+            return
+        
+        # Check minimum audio length
+        total_bytes = sum(len(chunk) for chunk in self._audio_buffer)
+        if total_bytes < self.MIN_AUDIO_LENGTH:
+            self._audio_buffer.clear()
+            self._is_speaking = False
             return
         
         self._is_processing = True
+        self._is_speaking = False
         await self._emit(PipelineEventType.PROCESSING_AUDIO)
         
         try:
@@ -243,8 +237,8 @@ class PipelineSession:
             audio = b"".join(self._audio_buffer)
             self._audio_buffer.clear()
             
-            # Transcribe
-            transcript = await self.stt.transcribe(audio, format="pcm")
+            # Transcribe (use 'wav' format to wrap raw PCM for Whisper)
+            transcript = await self.stt.transcribe(audio, audio_format="pcm")
             
             if not transcript.strip():
                 self._is_processing = False
@@ -256,12 +250,14 @@ class PipelineSession:
             response = await self._run_agent(transcript)
             
             # Synthesize response
+            self._is_playing = True
             await self._synthesize_and_stream(response)
             
         except Exception as e:
             await self._emit(PipelineEventType.ERROR, {"error": str(e)})
         finally:
             self._is_processing = False
+            self._is_playing = False
     
     async def _run_agent(self, text: str) -> str:
         """Run the agent on the transcribed text.
@@ -311,6 +307,12 @@ class PipelineSession:
         try:
             async for chunk in self.tts.synthesize_stream(text, self.tts_config):
                 await self._emit(PipelineEventType.AUDIO_CHUNK, {"audio": chunk})
+        except Exception as e:
+            # Log error but don't crash - the text response was already sent
+            import structlog
+            logger = structlog.get_logger(__name__)
+            logger.error("TTS synthesis failed", error=str(e))
+            await self._emit(PipelineEventType.ERROR, {"error": f"TTS failed: {str(e)}"})
         finally:
             await self._emit(PipelineEventType.AUDIO_END)
     
