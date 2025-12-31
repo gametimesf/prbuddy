@@ -9,12 +9,32 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ModelSettingsSchema(BaseModel):
+    """Settings for model behavior, including reasoning configuration."""
+    
+    model_config = ConfigDict(extra="allow")  # Allow additional OpenAI model settings
+    
+    temperature: float | None = Field(default=None, description="Sampling temperature")
+    top_p: float | None = Field(default=None, description="Top-p sampling")
+    max_tokens: int | None = Field(default=None, description="Maximum tokens in response")
+    
+    # Reasoning / thinking settings (for o1, o3 models)
+    reasoning_effort: str | None = Field(
+        default=None,
+        description="Reasoning effort: 'low', 'medium', 'high' for extended thinking"
+    )
+
+
 class AgentConfigSchema(BaseModel):
     """Schema for agent configuration in YAML files.
     
     Example YAML:
         name: ReviewerQA
         is_entry_point: true
+        model: gpt-4o
+        model_settings:
+          temperature: 0.7
+          reasoning_effort: high
         instructions: |
           You are the PR author's AI representative...
         handoff_trigger: Answer reviewer questions about the PR
@@ -31,6 +51,16 @@ class AgentConfigSchema(BaseModel):
     name: str = Field(..., description="Unique name for this agent")
     
     instructions: str = Field(..., description="System prompt / instructions for this agent")
+    
+    model: str = Field(
+        default="gpt-4o",
+        description="Model to use for this agent (e.g., gpt-4o, o3-mini)"
+    )
+    
+    model_settings: ModelSettingsSchema = Field(
+        default_factory=ModelSettingsSchema,
+        description="Model behavior settings"
+    )
     
     handoff_trigger: str = Field(
         default="",

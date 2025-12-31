@@ -238,6 +238,46 @@ async def get_pr_status(owner: str, repo: str, pr_number: int):
     return PRStatusResponse(**status)
 
 
+@app.get("/api/pr/{owner}/{repo}/{pr_number}/documents")
+async def list_pr_documents(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    doc_type: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """List documents in the PR knowledge base."""
+    manager = get_session_manager()
+    
+    pr_context = PRContext(owner=owner, repo=repo, number=pr_number)
+    rag_store = manager._get_or_create_rag_store(pr_context)
+    
+    documents = await rag_store.list_documents(
+        doc_type=doc_type,
+        limit=limit,
+        offset=offset,
+    )
+    
+    return {"documents": documents, "count": len(documents)}
+
+
+@app.get("/api/pr/{owner}/{repo}/{pr_number}/documents/{doc_id}")
+async def get_pr_document(owner: str, repo: str, pr_number: int, doc_id: str):
+    """Get a single document from the PR knowledge base."""
+    manager = get_session_manager()
+    
+    pr_context = PRContext(owner=owner, repo=repo, number=pr_number)
+    rag_store = manager._get_or_create_rag_store(pr_context)
+    
+    document = await rag_store.get_document(doc_id)
+    
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    return document
+
+
 @app.delete("/api/pr/{owner}/{repo}/{pr_number}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_pr(owner: str, repo: str, pr_number: int):
     """Delete all data for a PR."""

@@ -47,14 +47,25 @@ instructions: |
   - Acknowledge answers briefly before indexing
   - Use natural conversation style
   
-  ## Hand Off
-  If you need more raw context from GitHub, hand off to Research.
+  ## Hand Off to Research
+  Hand off to the Research agent when:
+  - You need more raw context from GitHub
+  - The user asks about **tribal knowledge**: team decisions, Slack discussions,
+    historical context, "why was it done this way?", related PRs
+  - The user mentions "unblocked", "team", "slack", "conversations", "sentiment"
   
   ## Refresh Research
   When the user says "refresh research" or "gather more context":
   1. Use trigger_research tool (optionally with a focus area)
   2. Then hand off to the Research agent
   3. Research will gather context and return to you
+  
+  ## Structured Output
+  Use markdown formatting for clarity:
+  - **Bold** for emphasis
+  - Lists for multiple items
+  - Code blocks for code references
+  - Headers for sections in longer responses
 
 handoff_trigger: >-
   Author training agent for learning about the PR from the author.

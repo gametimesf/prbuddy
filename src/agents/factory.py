@@ -156,14 +156,37 @@ def _build_agents(
         # Resolve MCP servers
         mcp_servers = _resolve_mcp_servers(cfg.mcp_servers, runtime_mcp_servers)
         
-        agent = agent_class(
+        # Build model settings dict for the agent
+        model_settings = {}
+        if cfg.model_settings:
+            if cfg.model_settings.temperature is not None:
+                model_settings["temperature"] = cfg.model_settings.temperature
+            if cfg.model_settings.top_p is not None:
+                model_settings["top_p"] = cfg.model_settings.top_p
+            if cfg.model_settings.max_tokens is not None:
+                model_settings["max_tokens"] = cfg.model_settings.max_tokens
+            # Reasoning effort for o1/o3 models
+            if cfg.model_settings.reasoning_effort is not None:
+                model_settings["reasoning"] = {
+                    "effort": cfg.model_settings.reasoning_effort
+                }
+        
+        # Create agent with model and settings
+        agent_kwargs = dict(
             name=cfg.name,
             instructions=cfg.instructions,
             tools=tools,
             handoffs=[],  # Will be wired up after all agents created
             handoff_description=cfg.handoff_trigger,
             mcp_servers=mcp_servers,
+            model=cfg.model,
         )
+        
+        # Only add model_settings if non-empty
+        if model_settings:
+            agent_kwargs["model_settings"] = model_settings
+        
+        agent = agent_class(**agent_kwargs)
         agents[cfg.name] = agent
     
     return agents

@@ -6,13 +6,31 @@ instructions: |
   1. Fetch PR diff, description, and comments from GitHub
   2. Look up linked Jira tickets when referenced
   3. Search for related PRs and documentation
-  4. Index all gathered content into the RAG store
+  4. **Use Unblocked for tribal knowledge** - team context, Slack, historical decisions
+  5. Index all gathered content into the RAG store
   
   ## Tools Available
+  
+  ### GitHub Tools
   - fetch_pr_diff: Get the PR diff from GitHub
   - fetch_pr_info: Get PR metadata (title, description, author)
   - fetch_pr_comments: Get PR discussion
   - fetch_pr_files: Get list of changed files
+  
+  ### Unblocked MCP (for tribal knowledge)
+  Use the **unblocked** MCP server tools when the user asks about:
+  - **Team context**: "What did the team decide?", "Who worked on this before?"
+  - **Slack/conversations**: "What was discussed?", "Any related threads?"
+  - **Historical context**: "Why was it done this way?", "Past decisions"
+  - **Related work**: "Similar PRs", "Related changes", "Previous implementations"
+  - **Sentiment/opinions**: "What do people think?", "Any concerns raised?"
+  
+  Unblocked provides:
+  - `unblocked_context_engine`: Semantic search across PRs, docs, and discussions
+  - `unblocked_historical_context`: Answer How/What/When questions
+  - `unblocked_data_retrieval`: Get recent activity, filter by status/assignee
+  
+  ### Knowledge Base
   - index_to_rag: Add content to the PR's knowledge base
   
   ## Workflow
@@ -20,7 +38,8 @@ instructions: |
   2. Fetch the diff and index it (doc_type: "diff")
   3. Index the PR description (doc_type: "description")
   4. Fetch and index any comments (doc_type: "comment")
-  5. Summarize what you found and what's been indexed
+  5. **If user asked about team/tribal knowledge**: Use Unblocked tools
+  6. Summarize what you found and what's been indexed
   
   ## Document Types
   When indexing, use these doc_types:
@@ -29,13 +48,22 @@ instructions: |
   - "comment": Discussion comments
   - "issue": Linked issue content
   - "doc": Documentation
+  - "context": Tribal knowledge from Unblocked
   
-  ## Output
-  After gathering context, provide a summary of:
-  - Files changed
-  - Main purpose of the PR
-  - Any linked issues or discussions
-  - What has been indexed
+  ## Output Format
+  Structure your responses clearly:
+  
+  ### Summary
+  Brief overview of what was found
+  
+  ### Files Changed
+  - List of key files
+  
+  ### Indexed Content
+  - What was added to the knowledge base
+  
+  ### Related Context (if Unblocked was used)
+  - Team discussions, historical decisions, etc.
   
   ## Returning Control
   After completing research:
@@ -60,6 +88,12 @@ tools:
 
 mcp_servers:
   - unblocked
+
+# Use a reasoning model for deep research
+model: gpt-4o
+model_settings:
+  temperature: 0.3  # Lower temp for more focused reasoning
+  # reasoning_effort: high  # Uncomment for o3-mini when available
 
 is_entry_point: false
 

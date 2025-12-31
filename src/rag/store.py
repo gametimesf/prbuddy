@@ -378,6 +378,89 @@ class WeaviatePRRAGStore:
         
         return counts
     
+    async def list_documents(
+        self,
+        doc_type: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List documents in the knowledge base.
+        
+        Args:
+            doc_type: Optional filter by document type.
+            limit: Maximum number of documents to return.
+            offset: Number of documents to skip (for pagination).
+        
+        Returns:
+            List of document dicts with id, doc_type, content, etc.
+        """
+        collection = self._get_collection()
+        
+        # Build query
+        if doc_type:
+            from weaviate.classes.query import Filter
+            result = collection.query.fetch_objects(
+                filters=Filter.by_property("doc_type").equal(doc_type),
+                limit=limit,
+                offset=offset,
+                return_metadata=MetadataQuery(creation_time=True),
+            )
+        else:
+            result = collection.query.fetch_objects(
+                limit=limit,
+                offset=offset,
+                return_metadata=MetadataQuery(creation_time=True),
+            )
+        
+        documents = []
+        for obj in result.objects:
+            props = obj.properties
+            # Truncate content for listing
+            content = props.get("content", "")
+            doc = {
+                "id": str(obj.uuid),
+                "doc_type": props.get("doc_type"),
+                "content_preview": content[:200] + "..." if len(content) > 200 else content,
+                "content_length": len(content),
+                "file_path": props.get("file_path"),
+                "source_url": props.get("source_url"),
+                "chunk_index": props.get("chunk_index"),
+                "created_at": obj.metadata.creation_time.isoformat() if obj.metadata and obj.metadata.creation_time else None,
+            }
+            documents.append(doc)
+        
+        return documents
+    
+    async def get_document(self, doc_id: str) -> dict[str, Any] | None:
+        """Get a single document by ID.
+        
+        Args:
+            doc_id: Document UUID.
+        
+        Returns:
+            Document dict or None if not found.
+        """
+        from uuid import UUID
+        collection = self._get_collection()
+        
+        try:
+            obj = collection.query.fetch_object_by_id(UUID(doc_id))
+            if obj:
+                props = obj.properties
+                return {
+                    "id": str(obj.uuid),
+                    "doc_type": props.get("doc_type"),
+                    "content": props.get("content"),
+                    "file_path": props.get("file_path"),
+                    "source_url": props.get("source_url"),
+                    "chunk_index": props.get("chunk_index"),
+                    "created_at": obj.metadata.creation_time.isoformat() if obj.metadata and obj.metadata.creation_time else None,
+                }
+        except Exception:
+            pass
+        
+        return None
+    
     async def save_conversation_history(
         self,
         session_type: str,

@@ -123,6 +123,8 @@ class TextSession:
         self._rag_store = rag_store
         self._history_loaded = False
         self._save_counter = 0
+        # Track active tool calls by ID for matching results
+        self._active_tool_calls: dict[str, str] = {}  # call_id -> tool_name
         
         # Initialize history with PR context as system message
         if self.pr_context:
@@ -196,16 +198,22 @@ class TextSession:
                     if isinstance(item, ToolCallItem):
                         tool_name = item.raw_item.name if hasattr(item.raw_item, 'name') else "unknown"
                         tool_args = item.raw_item.arguments if hasattr(item.raw_item, 'arguments') else "{}"
+                        call_id = item.raw_item.id if hasattr(item.raw_item, 'id') else str(uuid4())
+                        
+                        # Track this call for matching with result
+                        self._active_tool_calls[call_id] = tool_name
                         
                         logger.info(
                             "Tool call started",
                             tool=tool_name,
+                            call_id=call_id,
                             agent=current_agent_name,
                             arguments=tool_args[:200] if len(str(tool_args)) > 200 else tool_args,
                         )
                         
                         await self._emit(TextEventType.TOOL_CALL, {
                             "tool": tool_name,
+                            "call_id": call_id,
                             "arguments": tool_args,
                             "agent": current_agent_name,
                         })
@@ -224,7 +232,10 @@ class TextSession:
                     
                     # Tool call completed
                     elif isinstance(item, ToolCallOutputItem):
-                        tool_name = getattr(item, 'tool_name', 'unknown')
+                        # Get call_id from raw_item to look up tool name
+                        call_id = item.raw_item.call_id if hasattr(item.raw_item, 'call_id') else None
+                        tool_name = self._active_tool_calls.pop(call_id, "unknown") if call_id else "unknown"
+                        
                         # Truncate output for display
                         output_str = str(item.output)
                         if len(output_str) > 200:
@@ -237,17 +248,20 @@ class TextSession:
                             logger.warning(
                                 "Tool call failed",
                                 tool=tool_name,
+                                call_id=call_id,
                                 error=item.output.get("error"),
                             )
                         else:
                             logger.info(
                                 "Tool call completed",
                                 tool=tool_name,
+                                call_id=call_id,
                                 output_preview=output_str,
                             )
                         
                         await self._emit(TextEventType.TOOL_RESULT, {
                             "tool": tool_name,
+                            "call_id": call_id,
                             "success": is_success,
                             "output_preview": output_str,
                         })
@@ -434,21 +448,29 @@ class TextSession:
                     if isinstance(item, ToolCallItem):
                         tool_name = item.raw_item.name if hasattr(item.raw_item, 'name') else "unknown"
                         tool_args = item.raw_item.arguments if hasattr(item.raw_item, 'arguments') else "{}"
+                        call_id = item.raw_item.id if hasattr(item.raw_item, 'id') else str(uuid4())
+                        
+                        # Track this call for matching with result
+                        self._active_tool_calls[call_id] = tool_name
                         
                         logger.info(
                             "Greeting tool call started",
                             tool=tool_name,
+                            call_id=call_id,
                             agent=current_agent_name,
                             arguments=tool_args[:200] if len(str(tool_args)) > 200 else tool_args,
                         )
                         
                         await self._emit(TextEventType.TOOL_CALL, {
                             "tool": tool_name,
+                            "call_id": call_id,
                             "agent": current_agent_name,
                         })
                     
                     elif isinstance(item, ToolCallOutputItem):
-                        tool_name = getattr(item, 'tool_name', 'unknown')
+                        # Get call_id from raw_item to look up tool name
+                        call_id = item.raw_item.call_id if hasattr(item.raw_item, 'call_id') else None
+                        tool_name = self._active_tool_calls.pop(call_id, "unknown") if call_id else "unknown"
                         output_str = str(item.output)
                         
                         # Check if tool failed
@@ -458,17 +480,20 @@ class TextSession:
                             logger.warning(
                                 "Greeting tool call failed",
                                 tool=tool_name,
+                                call_id=call_id,
                                 error=item.output.get("error"),
                             )
                         else:
                             logger.info(
                                 "Greeting tool call completed",
                                 tool=tool_name,
+                                call_id=call_id,
                                 output_preview=output_str[:200] if len(output_str) > 200 else output_str,
                             )
                         
                         await self._emit(TextEventType.TOOL_RESULT, {
                             "tool": tool_name,
+                            "call_id": call_id,
                             "success": is_success,
                         })
                     
