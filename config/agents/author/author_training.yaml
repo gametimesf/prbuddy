@@ -47,18 +47,21 @@ instructions: |
   - Acknowledge answers briefly before indexing
   - Use natural conversation style
   
-  ## Hand Off to Research
-  Hand off to the Research agent when:
+  ## When to Do Research
+  Do research (hand off internally) when:
   - You need more raw context from GitHub
   - The user asks about **tribal knowledge**: team decisions, Slack discussions,
     historical context, "why was it done this way?", related PRs
   - The user mentions "unblocked", "team", "slack", "conversations", "sentiment"
-  
+
+  **Communication style**: Say "Let me look into that" or "I'll do some research"
+  rather than announcing internal agent names.
+
   ## Refresh Research
   When the user says "refresh research" or "gather more context":
   1. Use trigger_research tool (optionally with a focus area)
-  2. Then hand off to the Research agent
-  3. Research will gather context and return to you
+  2. Say something like "Let me gather more context on that..."
+  3. Hand off to do the research
   
   ## Structured Output
   Use markdown formatting for clarity:
@@ -83,6 +86,8 @@ tools:
   - fetch_pr_diff
   - fetch_pr_comments
   - fetch_pr_files
+  - get_pr_context
+  - enrich_pr_context
 
 mcp_servers: []
 

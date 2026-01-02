@@ -67,13 +67,13 @@ instructions: |
   
   ## Returning Control
   After completing research:
-  - For author sessions: Hand off back to AuthorTraining
-  - For reviewer sessions: Hand off back to ReviewerQA
-  - Just complete your summary and the appropriate agent will continue
+  - Summarize what you found in natural language
+  - The conversation will continue naturally after your summary
+  - Don't announce agent names - just say something like "Here's what I found..."
 
 handoff_trigger: >-
-  Research agent for gathering PR context from GitHub.
-  Hand off here when more context is needed about the PR.
+  Internal research capability for gathering PR context from GitHub and team knowledge.
+  Used when more context is needed about the PR, team decisions, or historical information.
 
 routes_to:
   - AuthorTraining
@@ -85,6 +85,7 @@ tools:
   - fetch_pr_comments
   - fetch_pr_files
   - index_to_rag
+  - get_pr_context
 
 mcp_servers:
   - unblocked

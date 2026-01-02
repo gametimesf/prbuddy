@@ -1091,7 +1091,10 @@
         // Audio playback
         let playbackContext = null;
         let audioQueue = [];
-        
+        let scheduledEndTime = 0;  // Track when scheduled audio will end
+        const MIN_BUFFER_CHUNKS = 2;  // Wait for 2 chunks before starting playback
+        let audioStreamEnded = false;  // Track if server signaled end of audio
+
         // Sample rates - set by server in 'ready' event
         let inputSampleRate = 24000;   // For mic/Whisper
         let outputSampleRate = 16000;  // For TTS playback (16kHz for Polly)
@@ -1180,6 +1183,10 @@
                         outputSampleRate = data.audio_config.output_sample_rate || 16000;
                         console.log(`Audio config: input=${inputSampleRate}Hz, output=${outputSampleRate}Hz`);
                     }
+                    // Rebuild conversation from history if provided (for reconnection)
+                    if (data.conversation_history && data.conversation_history.length > 0) {
+                        rebuildConversationFromHistory(data.conversation_history);
+                    }
                     updateStatus('connected', 'Connected');
                     break;
                     
@@ -1237,12 +1244,20 @@
                     }
                     break;
                     
+                case 'audio_start':
+                    handleAudioStart();
+                    break;
+
+                case 'audio_end':
+                    handleAudioEnd();
+                    break;
+
                 case 'audio_chunk':
                     if (data.data && data.data.audio) {
                         playAudio(data.data.audio);
                     }
                     break;
-                    
+
                 case 'audio':
                     // Pipeline mode audio response
                     if (data.audio) {
@@ -1251,8 +1266,9 @@
                     break;
                     
                 case 'error':
-                    addMessage('system', `Error: ${data.data.error}`);
-                    addActivity('❌', 'Error', data.data.error, 'error');
+                    const errorMsg = (data.data && data.data.error) || data.error || 'Unknown error';
+                    addMessage('system', `Error: ${errorMsg}`);
+                    addActivity('❌', 'Error', errorMsg, 'error');
                     break;
             }
         }
@@ -1360,15 +1376,19 @@
             const status = data.status || 'completed';
             const icon = status === 'initiated' ? '🔄' : '✅';
             const title = status === 'initiated' ? 'Handoff Initiated' : 'Handoff Completed';
-            
-            currentAgent = data.to || currentAgent;
-            addActivity(icon, title, `${data.from} → ${data.to}`, 'handoff', {
+
+            // Support both field name formats (from/to and from_agent/to_agent)
+            const fromAgent = data.from || data.from_agent;
+            const toAgent = data.to || data.to_agent;
+
+            currentAgent = toAgent || currentAgent;
+            addActivity(icon, title, `${fromAgent} → ${toAgent}`, 'handoff', {
                 type: 'handoff',
                 status,
-                from: data.from,
-                to: data.to,
+                from: fromAgent,
+                to: toAgent,
             });
-            
+
             // Update current agent display with animation
             const agentDisplayEl = document.getElementById('currentAgentDisplay');
             if (agentDisplayEl) {
@@ -1605,9 +1625,30 @@
             chatMessages.appendChild(msg);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
-        
+
+        // Rebuild conversation from history (for reconnection)
+        function rebuildConversationFromHistory(history) {
+            // Clear existing messages
+            chatMessages.innerHTML = '';
+
+            // Add each message from history
+            for (const msg of history) {
+                if (msg.role === 'user') {
+                    addMessage('user', msg.content);
+                } else if (msg.role === 'assistant') {
+                    addMessage('assistant', msg.content);
+                }
+                // Skip system messages - they're not shown in chat
+            }
+
+            console.log(`Rebuilt ${history.length} messages from history`);
+        }
+
         // Typing indicator
         function showTypingIndicator() {
+            // Don't add another if one already exists
+            if (document.getElementById('typingIndicator')) return;
+
             const indicator = document.createElement('div');
             indicator.className = 'message thinking';
             indicator.id = 'typingIndicator';
@@ -1630,11 +1671,11 @@
             messageInput.value = '';
         }
         
-        // Audio playback - plays PCM16 chunks from server
+        // Audio playback - plays PCM16 chunks from server using scheduled playback
         async function playAudio(base64Audio) {
             // Skip audio playback in text mode
             if (mode === 'text') return;
-            
+
             // Decode base64 to ArrayBuffer
             const binaryString = atob(base64Audio);
             const bytes = new Uint8Array(binaryString.length);
@@ -1645,54 +1686,108 @@
             // Queue audio for playback
             audioQueue.push(bytes.buffer);
 
-            if (!isPlaying) {
-                playNextAudio();
+            // Start playback once we have enough buffered (or stream ended)
+            if (!isPlaying && (audioQueue.length >= MIN_BUFFER_CHUNKS || audioStreamEnded)) {
+                await startScheduledPlayback();
             }
         }
 
-        async function playNextAudio() {
-            if (audioQueue.length === 0) {
-                isPlaying = false;
-                updateStatus('connected', 'Connected');
-                return;
+        // Handle audio stream end - flush remaining buffer
+        function handleAudioEnd() {
+            audioStreamEnded = true;
+            // If we have queued audio but haven't started playing, start now
+            if (!isPlaying && audioQueue.length > 0) {
+                startScheduledPlayback();
             }
+        }
 
-            isPlaying = true;
-            updateStatus('connected', 'Playing...');
-            const audioData = audioQueue.shift();
+        // Handle audio stream start - reset state
+        function handleAudioStart() {
+            audioStreamEnded = false;
+            scheduledEndTime = 0;
+        }
+
+        async function startScheduledPlayback() {
+            if (isPlaying) return;
 
             try {
                 // Create separate playback AudioContext if needed
                 if (!playbackContext || playbackContext.state === 'closed') {
                     playbackContext = new AudioContext({ sampleRate: outputSampleRate });
                 }
-                
+
                 // Resume if suspended (browser autoplay policy)
                 if (playbackContext.state === 'suspended') {
                     await playbackContext.resume();
                 }
 
-                // Convert PCM16 to float32
-                const pcm16 = new Int16Array(audioData);
-                const float32 = new Float32Array(pcm16.length);
-                for (let i = 0; i < pcm16.length; i++) {
-                    float32[i] = pcm16[i] / 32768.0;
-                }
+                isPlaying = true;
+                updateStatus('connected', 'Playing...');
 
-                // Create audio buffer at the correct sample rate
-                const audioBuffer = playbackContext.createBuffer(1, float32.length, outputSampleRate);
-                audioBuffer.getChannelData(0).set(float32);
+                // Initialize scheduled time with small delay to allow buffering
+                scheduledEndTime = playbackContext.currentTime + 0.02;
 
-                // Play
-                const source = playbackContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(playbackContext.destination);
-                source.onended = playNextAudio;
-                source.start();
+                // Schedule all queued chunks
+                scheduleQueuedAudio();
 
             } catch (error) {
-                console.error('Playback error:', error);
-                playNextAudio(); // Try next chunk
+                console.error('Failed to start playback:', error);
+                isPlaying = false;
+            }
+        }
+
+        function scheduleQueuedAudio() {
+            while (audioQueue.length > 0) {
+                const audioData = audioQueue.shift();
+
+                try {
+                    // Convert PCM16 to float32
+                    const pcm16 = new Int16Array(audioData);
+                    const float32 = new Float32Array(pcm16.length);
+                    for (let i = 0; i < pcm16.length; i++) {
+                        float32[i] = pcm16[i] / 32768.0;
+                    }
+
+                    // Create audio buffer at the correct sample rate
+                    const audioBuffer = playbackContext.createBuffer(1, float32.length, outputSampleRate);
+                    audioBuffer.getChannelData(0).set(float32);
+
+                    // Create and schedule source
+                    const source = playbackContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(playbackContext.destination);
+
+                    // Schedule to start exactly when the previous chunk ends
+                    source.start(scheduledEndTime);
+                    scheduledEndTime += audioBuffer.duration;
+
+                } catch (error) {
+                    console.error('Error scheduling audio chunk:', error);
+                }
+            }
+
+            // Check if more audio arrives later
+            if (!audioStreamEnded) {
+                // Schedule a check for more audio
+                setTimeout(() => {
+                    if (audioQueue.length > 0) {
+                        scheduleQueuedAudio();
+                    } else if (audioStreamEnded || playbackContext.currentTime >= scheduledEndTime) {
+                        // Playback complete
+                        isPlaying = false;
+                        updateStatus('connected', 'Connected');
+                    } else {
+                        // Still playing, check again
+                        setTimeout(arguments.callee, 100);
+                    }
+                }, 50);
+            } else {
+                // Stream ended, wait for playback to complete
+                const remainingTime = (scheduledEndTime - playbackContext.currentTime) * 1000;
+                setTimeout(() => {
+                    isPlaying = false;
+                    updateStatus('connected', 'Connected');
+                }, Math.max(0, remainingTime + 50));
             }
         }
         

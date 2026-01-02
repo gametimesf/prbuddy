@@ -58,8 +58,8 @@ instructions: |
   ## Refresh Research
   When the reviewer says "refresh research" or "get more context":
   1. Use trigger_research tool
-  2. Hand off to the Research agent for deeper investigation
-  3. Research will gather context and return
+  2. Say "Let me do some more research on that..."
+  3. Hand off internally to do the research - don't announce agent names
 
 handoff_trigger: >-
   Reviewer Q&A agent for answering questions about the PR.
@@ -78,6 +78,7 @@ tools:
   - fetch_pr_comments
   - fetch_pr_files
   - fetch_file_content
+  - get_pr_context
 
 mcp_servers: []
 

@@ -12,9 +12,17 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
+import structlog
+
 from agents import Agent, Runner
 
+from ..agents.hooks import create_logging_hooks
+from .system_message import generate_pr_context_message
+
+logger = structlog.get_logger(__name__)
+
 if TYPE_CHECKING:
+    from ..rag.store import WeaviatePRRAGStore
     from ..voice.stt.base import STTProvider
     from ..voice.tts.base import TTSProvider, TTSConfig
     from .pr_context import PRContext
@@ -89,10 +97,12 @@ class PipelineSession:
         tts_config: "TTSConfig",
         *,
         pr_context: "PRContext | None" = None,
+        session_type: str = "author",
         on_event: EventCallback | None = None,
+        rag_store: "WeaviatePRRAGStore | None" = None,
     ) -> None:
         """Initialize the pipeline session.
-        
+
         Args:
             session_id: Unique session identifier.
             stt: Speech-to-text provider.
@@ -100,7 +110,9 @@ class PipelineSession:
             tts: Text-to-speech provider.
             tts_config: TTS configuration.
             pr_context: Optional PR context.
+            session_type: 'author' or 'reviewer' for history persistence.
             on_event: Optional event callback.
+            rag_store: Optional RAG store for history persistence.
         """
         self.session_id = session_id
         self.stt = stt
@@ -108,24 +120,77 @@ class PipelineSession:
         self.tts = tts
         self.tts_config = tts_config
         self.pr_context = pr_context
+        self.session_type = session_type
         self._on_event = on_event
-        
+        self._rag_store = rag_store
+        self._history_loaded = False
+
         # VAD state
         self._audio_buffer: list[bytes] = []
         self._last_audio_time = 0.0
         self._is_speaking = False
         self._is_processing = False
         self._is_playing = False
-        
-        # Conversation state
+
+        # Conversation state - will be loaded from RAG or initialized with PR context
         self._history: list[dict[str, str]] = []
         self._current_agent = agent
+
+        # Background task tracking - allows agent to continue if client disconnects
+        self._active_task: asyncio.Task | None = None
     
     async def _emit(self, event_type: PipelineEventType, data: dict[str, Any] | None = None) -> None:
-        """Emit an event."""
+        """Emit an event. Gracefully handles disconnected clients."""
         if self._on_event:
             event = PipelineEvent(type=event_type, data=data or {})
-            await self._on_event(event)
+            try:
+                await self._on_event(event)
+            except Exception as e:
+                # Client likely disconnected - log but don't fail the agent
+                logger.debug(
+                    "event_emission_failed",
+                    event_type=event_type.value,
+                    error=str(e),
+                )
+                # Clear callback to avoid repeated failures
+                self._on_event = None
+
+    def set_event_callback(self, callback: EventCallback | None) -> None:
+        """Set or clear the event callback. Used for WebSocket reconnection."""
+        self._on_event = callback
+
+    async def _load_history(self) -> None:
+        """Load conversation history from RAG store."""
+        if self._history_loaded or not self._rag_store:
+            # No RAG store - initialize with PR context only
+            if not self._history_loaded and self.pr_context:
+                self._history = [{
+                    "role": "system",
+                    "content": generate_pr_context_message(self.pr_context),
+                }]
+            self._history_loaded = True
+            return
+
+        self._history_loaded = True
+        history = await self._rag_store.load_conversation_history(self.session_type)
+        if history:
+            # Use loaded history (includes PR context from when it was saved)
+            self._history = history
+        elif self.pr_context:
+            # No saved history - start fresh with PR context
+            self._history = [{
+                "role": "system",
+                "content": generate_pr_context_message(self.pr_context),
+            }]
+
+    async def _save_history(self) -> None:
+        """Save conversation history to RAG store."""
+        if not self._rag_store or not self._history:
+            return
+
+        await self._rag_store.save_conversation_history(
+            self.session_type, self._history
+        )
     
     @staticmethod
     def _get_audio_energy(audio_data: bytes) -> float:
@@ -261,39 +326,75 @@ class PipelineSession:
     
     async def _run_agent(self, text: str) -> str:
         """Run the agent on the transcribed text.
-        
+
         Args:
             text: Transcribed user input.
-        
+
         Returns:
             Agent response text.
         """
         await self._emit(PipelineEventType.AGENT_THINKING)
-        
+
         # Add to history
         self._history.append({"role": "user", "content": text})
-        
-        # Run agent
-        result = await Runner.run(
-            self._current_agent,
-            input=self._history,
-        )
-        
+
+        # Create hooks for logging agent activities
+        async def emit_hook_event(event_type: str, data: dict[str, Any]) -> None:
+            """Emit hook events as pipeline events."""
+            if event_type == "tool_start":
+                await self._emit(PipelineEventType.TOOL_CALL, data)
+            elif event_type == "tool_end":
+                await self._emit(PipelineEventType.TOOL_RESULT, data)
+            elif event_type == "agent_handoff":
+                # Translate field names to match frontend expectations
+                await self._emit(PipelineEventType.AGENT_HANDOFF, {
+                    "from": data.get("from_agent"),
+                    "to": data.get("to_agent"),
+                    "status": "completed",
+                    "turn": data.get("turn"),
+                })
+            elif event_type == "agent_start":
+                await self._emit(PipelineEventType.AGENT_THINKING, {
+                    "agent": data.get("agent"),
+                    "turn": data.get("turn"),
+                })
+
+        hooks = create_logging_hooks(on_event=emit_hook_event)
+
+        # Run agent with timeout to prevent hanging
+        try:
+            result = await asyncio.wait_for(
+                Runner.run(
+                    self._current_agent,
+                    input=self._history,
+                    hooks=hooks,
+                ),
+                timeout=120.0,  # 2 minute timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error("agent_timeout", agent=self._current_agent.name, timeout=120)
+            await self._emit(PipelineEventType.ERROR, {"error": "Agent timed out after 120 seconds"})
+            return "I apologize, but I'm taking too long to respond. Please try again."
+
         response = result.final_output if result.final_output else ""
-        
+
         # Check for handoff
         if result.last_agent != self._current_agent:
-            await self._emit(PipelineEventType.AGENT_HANDOFF, {
-                "from": self._current_agent.name,
-                "to": result.last_agent.name,
-            })
+            logger.info(
+                "agent_handoff_complete",
+                from_agent=self._current_agent.name,
+                to_agent=result.last_agent.name,
+            )
             self._current_agent = result.last_agent
-        
+
         # Add response to history
         self._history.append({"role": "assistant", "content": response})
-        
+
+        # Save history for cross-session persistence
+        await self._save_history()
+
         await self._emit(PipelineEventType.AGENT_RESPONSE, {"text": response})
-        
+
         return response
     
     async def _synthesize_and_stream(self, text: str) -> None:
@@ -336,28 +437,75 @@ class PipelineSession:
     
     async def trigger_greeting(self) -> str:
         """Trigger the agent's greeting and synthesize it.
-        
+
+        Loads conversation history from RAG if available, then generates
+        a context-aware greeting.
+
         Returns:
             Greeting text.
         """
         await self._emit(PipelineEventType.SESSION_STARTED)
-        
+
+        # Load conversation history (includes PR context)
+        await self._load_history()
+
         self._is_processing = True
-        
+
         try:
-            # Get greeting
-            result = await Runner.run(
-                self._current_agent,
-                input=[{"role": "user", "content": "Hello"}],
-            )
-            
-            greeting = result.final_output if result.final_output else "Hello! How can I help you?"
-            
+            # Build input with history + greeting trigger
+            input_messages = self._history.copy()
+            input_messages.append({"role": "user", "content": "Hello"})
+
+            # Create hooks for logging agent activities
+            async def emit_hook_event(event_type: str, data: dict[str, Any]) -> None:
+                """Emit hook events as pipeline events."""
+                if event_type == "tool_start":
+                    await self._emit(PipelineEventType.TOOL_CALL, data)
+                elif event_type == "tool_end":
+                    await self._emit(PipelineEventType.TOOL_RESULT, data)
+                elif event_type == "agent_handoff":
+                    # Translate field names to match frontend expectations
+                    await self._emit(PipelineEventType.AGENT_HANDOFF, {
+                        "from": data.get("from_agent"),
+                        "to": data.get("to_agent"),
+                        "status": "completed",
+                        "turn": data.get("turn"),
+                    })
+                elif event_type == "agent_start":
+                    await self._emit(PipelineEventType.AGENT_THINKING, {
+                        "agent": data.get("agent"),
+                        "turn": data.get("turn"),
+                    })
+
+            hooks = create_logging_hooks(on_event=emit_hook_event)
+
+            # Get greeting with timeout
+            try:
+                result = await asyncio.wait_for(
+                    Runner.run(
+                        self._current_agent,
+                        input=input_messages,
+                        hooks=hooks,
+                    ),
+                    timeout=60.0,  # 1 minute timeout for greeting
+                )
+                greeting = result.final_output if result.final_output else "Hello! How can I help you?"
+            except asyncio.TimeoutError:
+                logger.error("greeting_timeout", agent=self._current_agent.name, timeout=60)
+                greeting = "Hello! I'm ready to help you with this PR. What would you like to discuss?"
+
+            # Add to history for continuity
+            self._history.append({"role": "user", "content": "Hello"})
+            self._history.append({"role": "assistant", "content": greeting})
+
+            # Save history for cross-session persistence
+            await self._save_history()
+
             await self._emit(PipelineEventType.AGENT_RESPONSE, {"text": greeting})
-            
+
             # Synthesize greeting
             await self._synthesize_and_stream(greeting)
-            
+
             return greeting
         finally:
             self._is_processing = False

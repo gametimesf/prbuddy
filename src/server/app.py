@@ -374,65 +374,106 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
 
 async def _handle_text_session(websocket: WebSocket, session):
-    """Handle text-mode WebSocket session."""
+    """Handle text-mode WebSocket session.
+
+    Agent tasks run as background tasks so they continue even if the client disconnects.
+    On reconnect, conversation history is loaded from Weaviate.
+    """
     runner = session.runner
-    
-    # Send ready event (no audio config for text mode)
-    await websocket.send_json({
-        "type": "ready",
-        "audio_config": None,  # No audio in text mode
-    })
-    
+
     # Set up event callback
     async def on_event(event: TextEvent):
         await websocket.send_json({
             "type": event.type.value,
             "data": event.data,
         })
-    
-    runner._on_event = on_event
-    
-    # Send greeting
-    await runner.trigger_greeting()
-    
+
+    runner.set_event_callback(on_event)
+
+    # Load conversation history from Weaviate for reconnection support
+    await runner._load_history()
+
+    # Send ready event with conversation history for UI rebuild
+    history = runner.get_history()
+    await websocket.send_json({
+        "type": "ready",
+        "audio_config": None,  # No audio in text mode
+        "conversation_history": history,
+    })
+
+    # Check if we need to trigger greeting (new session with no history)
+    user_messages = [m for m in history if m.get("role") in ("user", "assistant")]
+    if not user_messages:
+        # Spawn greeting as background task
+        async def run_greeting():
+            try:
+                await runner.trigger_greeting()
+            except Exception as e:
+                logger.error("greeting_task_failed", error=str(e))
+
+        runner._active_task = asyncio.create_task(run_greeting())
+        # Wait for it while connected
+        try:
+            await runner._active_task
+        except asyncio.CancelledError:
+            pass  # Task was cancelled, that's ok
+
     # Message loop
-    while True:
-        data = await websocket.receive_json()
-        
-        if data.get("type") == "message":
-            text = data.get("text", "")
-            await runner.send_text(text)
-        elif data.get("type") == "end":
-            await runner.end_session()
-            break
+    try:
+        while True:
+            data = await websocket.receive_json()
+
+            if data.get("type") == "message":
+                text = data.get("text", "")
+                if text:
+                    # Spawn agent task in background
+                    async def run_agent(msg: str):
+                        try:
+                            await runner.send_text(msg)
+                        except Exception as e:
+                            logger.error("agent_task_failed", error=str(e))
+
+                    runner._active_task = asyncio.create_task(run_agent(text))
+                    # Wait for it while connected
+                    try:
+                        await runner._active_task
+                    except asyncio.CancelledError:
+                        pass
+
+            elif data.get("type") == "end":
+                await runner.end_session()
+                break
+
+    except WebSocketDisconnect:
+        # Clear callback but DON'T cancel the task - let it finish
+        runner.set_event_callback(None)
+        if runner._active_task and not runner._active_task.done():
+            logger.info(
+                "websocket_disconnected_task_continuing",
+                session_id=session.id,
+                task_running=True,
+            )
+        raise
 
 
 async def _handle_pipeline_session(websocket: WebSocket, session):
     """Handle pipeline-mode WebSocket session.
-    
+
     Uses PipelineSession which handles VAD, buffering, STT, agent execution,
-    and TTS. This handler translates between WebSocket messages and pipeline events.
+    and TTS. Agent tasks run as background tasks so they continue even if
+    the client disconnects. On reconnect, conversation history is loaded from Weaviate.
     """
     import base64
     from ..sessions.pipeline import PipelineEventType
-    
+
     runner = session.runner
-    
+
     # Get sample rate from tts_config if available
     output_sample_rate = 16000  # Default for Polly
     if hasattr(session.config, 'tts_config') and session.config.tts_config:
         if hasattr(session.config.tts_config, 'sample_rate'):
             output_sample_rate = session.config.tts_config.sample_rate
-    
-    # Send ready event with audio config
-    await websocket.send_json({
-        "type": "ready",
-        "audio_config": {
-            "input_sample_rate": 24000,  # For mic/Whisper
-            "output_sample_rate": output_sample_rate,  # From session config
-        }
-    })
-    
+
     # Event handler - translate pipeline events to WebSocket messages
     async def on_event(event) -> None:
         if event.type == PipelineEventType.TRANSCRIPT:
@@ -443,7 +484,7 @@ async def _handle_pipeline_session(websocket: WebSocket, session):
                     "role": "user",
                     "text": text,
                 })
-        
+
         elif event.type == PipelineEventType.AGENT_RESPONSE:
             text = event.data.get("text", "")
             agent = event.data.get("agent", "Agent")
@@ -453,7 +494,10 @@ async def _handle_pipeline_session(websocket: WebSocket, session):
                 "text": text,
                 "agent": agent,
             })
-        
+
+        elif event.type == PipelineEventType.AUDIO_START:
+            await websocket.send_json({"type": "audio_start"})
+
         elif event.type == PipelineEventType.AUDIO_CHUNK:
             audio = event.data.get("audio", b"")
             audio_b64 = base64.b64encode(audio).decode()
@@ -461,60 +505,117 @@ async def _handle_pipeline_session(websocket: WebSocket, session):
                 "type": "audio",
                 "audio": audio_b64,
             })
-        
+
+        elif event.type == PipelineEventType.AUDIO_END:
+            await websocket.send_json({"type": "audio_end"})
+
         elif event.type == PipelineEventType.AGENT_HANDOFF:
             await websocket.send_json({
                 "type": "agent_handoff",
                 "data": event.data,
             })
-        
+
         elif event.type == PipelineEventType.TOOL_CALL:
             await websocket.send_json({
                 "type": "tool_call",
                 "data": event.data,
             })
-        
+
         elif event.type == PipelineEventType.TOOL_RESULT:
             await websocket.send_json({
                 "type": "tool_result",
                 "data": event.data,
             })
-        
+
+        elif event.type == PipelineEventType.AGENT_THINKING:
+            await websocket.send_json({
+                "type": "agent_thinking",
+                "data": event.data,
+            })
+
         elif event.type == PipelineEventType.ERROR:
             await websocket.send_json({
                 "type": "error",
                 "message": event.data.get("error", "Unknown error"),
             })
-    
-    runner._on_event = on_event
-    
-    # Trigger initial greeting
-    await runner.trigger_greeting()
-    
+
+    runner.set_event_callback(on_event)
+
+    # Load conversation history for reconnection support
+    await runner._load_history()
+    history = runner._history
+
+    # Send ready event with audio config and conversation history
+    await websocket.send_json({
+        "type": "ready",
+        "audio_config": {
+            "input_sample_rate": 24000,  # For mic/Whisper
+            "output_sample_rate": output_sample_rate,  # From session config
+        },
+        "conversation_history": history,
+    })
+
+    # Check if we need to trigger greeting (new session with no user/assistant history)
+    user_messages = [m for m in history if m.get("role") in ("user", "assistant")]
+    if not user_messages:
+        # Spawn greeting as background task
+        async def run_greeting():
+            try:
+                await runner.trigger_greeting()
+            except Exception as e:
+                logger.error("greeting_task_failed", error=str(e))
+
+        runner._active_task = asyncio.create_task(run_greeting())
+        # Wait for it while connected
+        try:
+            await runner._active_task
+        except asyncio.CancelledError:
+            pass  # Task was cancelled, that's ok
+
     # Message loop
     try:
         while True:
             data = await websocket.receive_json()
             msg_type = data.get("type")
-            
+
             if msg_type == "audio":
                 # Decode base64 PCM16 audio and feed to pipeline VAD
                 audio_b64 = data.get("audio", "")
                 audio_bytes = base64.b64decode(audio_b64)
                 await runner.feed_audio(audio_bytes)
-            
+
             elif msg_type == "text" or msg_type == "message":
                 text = data.get("text", "")
                 if text:
-                    await runner.send_text(text)
-            
+                    # Spawn agent task in background
+                    async def run_agent(msg: str):
+                        try:
+                            await runner.send_text(msg)
+                        except Exception as e:
+                            logger.error("agent_task_failed", error=str(e))
+
+                    runner._active_task = asyncio.create_task(run_agent(text))
+                    # Wait for it while connected
+                    try:
+                        await runner._active_task
+                    except asyncio.CancelledError:
+                        pass
+
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
-            
+
             elif msg_type == "close" or msg_type == "end":
                 break
-    
+
     except WebSocketDisconnect:
+        # Clear callback but DON'T cancel the task - let it finish
+        runner.set_event_callback(None)
+        if runner._active_task and not runner._active_task.done():
+            logger.info(
+                "websocket_disconnected_task_continuing",
+                session_id=session.id,
+                task_running=True,
+            )
         raise
 
 

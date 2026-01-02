@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
-from agents import Agent, function_tool, handoff
+from agents import Agent, function_tool, handoff, ModelSettings
+from agents.model_settings import Reasoning
 from agents.realtime import RealtimeAgent
 from agents.realtime.handoffs import realtime_handoff
 
@@ -90,55 +91,61 @@ class RealtimeAgentSystem:
         return list(self.agents.keys())
 
 
-def _resolve_mcp_servers(
+async def _resolve_mcp_servers(
     server_names: list[str],
     runtime_mcp_servers: dict[str, MCPServer] | None = None,
 ) -> list[MCPServer]:
     """Resolve MCP server names to actual server instances.
-    
+
     Args:
         server_names: List of MCP server names from config.
         runtime_mcp_servers: Optional dict of runtime-provided MCP servers.
-    
+
     Returns:
-        List of MCPServer instances.
+        List of MCPServer instances (connected and ready to use).
     """
     servers: list[MCPServer] = []
     runtime_mcp_servers = runtime_mcp_servers or {}
-    
+
     for name in server_names:
         if name in runtime_mcp_servers:
-            # Use runtime-provided server
+            # Use runtime-provided server (assumed to be connected)
             servers.append(runtime_mcp_servers[name])
         elif MCPServerRegistry.is_registered(name):
-            servers.append(MCPServerRegistry.get(name))
+            server = MCPServerRegistry.get(name)
+            # Connect the server before use (required by agents SDK)
+            try:
+                await server.connect()
+                servers.append(server)
+            except Exception as e:
+                print(f"Warning: Failed to connect MCP server '{name}': {e}")
         else:
             # Skip unregistered servers with warning
             print(f"Warning: MCP server '{name}' not registered, skipping")
-    
+
     return servers
 
 
-def _build_agents(
+async def _build_agents(
     configs: list[AgentConfigSchema],
     agent_class: type[TAgent],
     runtime_mcp_servers: dict[str, MCPServer] | None = None,
     tool_overrides: dict[str, Callable[..., Any]] | None = None,
 ) -> dict[str, TAgent]:
     """Create agent instances from configs (without handoffs).
-    
+
     Args:
         configs: List of agent configurations.
         agent_class: Agent or RealtimeAgent class.
         runtime_mcp_servers: Optional dict of runtime MCP servers.
         tool_overrides: Optional dict mapping tool names to mock implementations.
                         Used for testing to inject mock tools instead of real ones.
-    
+
     Returns:
         Dict mapping agent name to agent instance.
     """
     agents: dict[str, TAgent] = {}
-    
+
     for cfg in configs:
         # Resolve tools - check overrides first, then registry
         tools = []
@@ -152,24 +159,29 @@ def _build_agents(
             else:
                 # Fall back to registry (real implementation)
                 tools.append(ToolRegistry.get(tool_name))
+
+        # Resolve MCP servers (async to allow connection)
+        mcp_servers = await _resolve_mcp_servers(cfg.mcp_servers, runtime_mcp_servers)
         
-        # Resolve MCP servers
-        mcp_servers = _resolve_mcp_servers(cfg.mcp_servers, runtime_mcp_servers)
-        
-        # Build model settings dict for the agent
-        model_settings = {}
+        # Build model settings for the agent
+        model_settings = None
         if cfg.model_settings:
-            if cfg.model_settings.temperature is not None:
-                model_settings["temperature"] = cfg.model_settings.temperature
-            if cfg.model_settings.top_p is not None:
-                model_settings["top_p"] = cfg.model_settings.top_p
-            if cfg.model_settings.max_tokens is not None:
-                model_settings["max_tokens"] = cfg.model_settings.max_tokens
-            # Reasoning effort for o1/o3 models
+            # Build reasoning object if needed
+            reasoning = None
             if cfg.model_settings.reasoning_effort is not None:
-                model_settings["reasoning"] = {
-                    "effort": cfg.model_settings.reasoning_effort
-                }
+                reasoning = Reasoning(effort=cfg.model_settings.reasoning_effort)
+
+            # Only create ModelSettings if at least one value is set
+            if (cfg.model_settings.temperature is not None or
+                cfg.model_settings.top_p is not None or
+                cfg.model_settings.max_tokens is not None or
+                reasoning is not None):
+                model_settings = ModelSettings(
+                    temperature=cfg.model_settings.temperature,
+                    top_p=cfg.model_settings.top_p,
+                    max_tokens=cfg.model_settings.max_tokens,
+                    reasoning=reasoning,
+                )
         
         # Create agent with model and settings
         agent_kwargs = dict(
@@ -182,8 +194,8 @@ def _build_agents(
             model=cfg.model,
         )
         
-        # Only add model_settings if non-empty
-        if model_settings:
+        # Only add model_settings if it was created
+        if model_settings is not None:
             agent_kwargs["model_settings"] = model_settings
         
         agent = agent_class(**agent_kwargs)
@@ -292,9 +304,9 @@ async def create_agent_system(
     if not entry_point_name:
         raise ValueError("No entry point agent defined")
     
-    # Create all agents
-    agents = _build_agents(configs, Agent, runtime_mcp_servers, tool_overrides)
-    
+    # Create all agents (async to connect MCP servers)
+    agents = await _build_agents(configs, Agent, runtime_mcp_servers, tool_overrides)
+
     # Wire handoffs
     _wire_handoffs_text(agents, configs)
     
@@ -353,9 +365,9 @@ async def create_realtime_agent_system(
     if not entry_point_name:
         raise ValueError("No entry point agent defined")
     
-    # Create all agents
-    agents = _build_agents(configs, RealtimeAgent, runtime_mcp_servers, tool_overrides)
-    
+    # Create all agents (async to connect MCP servers)
+    agents = await _build_agents(configs, RealtimeAgent, runtime_mcp_servers, tool_overrides)
+
     # Wire handoffs
     _wire_handoffs_realtime(agents, configs)
     

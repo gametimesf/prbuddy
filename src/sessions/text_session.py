@@ -28,6 +28,7 @@ from agents.items import (
 )
 
 from ..observability.logging import get_logger
+from .system_message import generate_pr_context_message
 
 if TYPE_CHECKING:
     from .pr_context import PRContext
@@ -125,42 +126,36 @@ class TextSession:
         self._save_counter = 0
         # Track active tool calls by ID for matching results
         self._active_tool_calls: dict[str, str] = {}  # call_id -> tool_name
-        
+
+        # Background task tracking - allows agent to continue if client disconnects
+        self._active_task: asyncio.Task | None = None
+
         # Initialize history with PR context as system message
         if self.pr_context:
             self._history.append({
                 "role": "system",
-                "content": self._get_pr_context_prompt(),
+                "content": generate_pr_context_message(self.pr_context),
             })
-    
+
     async def _emit(self, event_type: TextEventType, data: dict[str, Any] | None = None) -> None:
-        """Emit an event to the callback if registered."""
+        """Emit an event. Gracefully handles disconnected clients."""
         if self._on_event:
             event = TextEvent(type=event_type, data=data or {})
-            await self._on_event(event)
-    
-    def _get_pr_context_prompt(self) -> str:
-        """Get system prompt with PR context for tools.
-        
-        This ensures the agent always knows the correct owner/repo/pr_number
-        when calling GitHub tools.
-        """
-        if not self.pr_context:
-            return ""
-        
-        return (
-            f"## Current PR Context\n"
-            f"You are working with the following pull request:\n"
-            f"- Owner: {self.pr_context.owner}\n"
-            f"- Repo: {self.pr_context.repo}\n"
-            f"- PR Number: {self.pr_context.number}\n"
-            f"- PR URL: https://github.com/{self.pr_context.owner}/{self.pr_context.repo}/pull/{self.pr_context.number}\n\n"
-            f"IMPORTANT: When calling any GitHub tools (fetch_pr_info, fetch_pr_diff, fetch_pr_comments, fetch_pr_files), "
-            f"always use these exact values:\n"
-            f"- owner: \"{self.pr_context.owner}\"\n"
-            f"- repo: \"{self.pr_context.repo}\"\n"
-            f"- pr_number: {self.pr_context.number}\n"
-        )
+            try:
+                await self._on_event(event)
+            except Exception as e:
+                # Client likely disconnected - log but don't fail the agent
+                logger.debug(
+                    "event_emission_failed",
+                    event_type=event_type.value,
+                    error=str(e),
+                )
+                # Clear callback to avoid repeated failures
+                self._on_event = None
+
+    def set_event_callback(self, callback: "TextEventCallback | None") -> None:
+        """Set or clear the event callback. Used for WebSocket reconnection."""
+        self._on_event = callback
     
     async def send_text(self, text: str) -> str:
         """Process a text message and get a response.
