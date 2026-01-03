@@ -32,11 +32,12 @@ def create_unblocked_mcp() -> MCPServerStreamableHttp:
         params=MCPServerStreamableHttpParams(
             url="https://getunblocked.com/api/mcpsse",
             headers={"Authorization": f"Bearer {api_key}"},
-            timeout=60.0,  # 60 seconds for Unblocked semantic searches
+            timeout=60.0,  # 60 seconds for Unblocked HTTP requests
             sse_read_timeout=300.0,  # 5 minutes for SSE reads
         ),
         name="unblocked",
         cache_tools_list=True,  # Tools don't change often
+        client_session_timeout_seconds=300.0,  # 5 minutes for MCP protocol layer
     )
 
 

@@ -1,6 +1,7 @@
 """PR session manager.
 
 Manages the lifecycle of PR-scoped sessions across voice and text modes.
+Voice mode uses pipeline (Agent + TTS), not OpenAI Realtime API.
 """
 
 from __future__ import annotations
@@ -13,13 +14,10 @@ from uuid import uuid4
 import weaviate
 
 from agents import Agent
-from agents.realtime import RealtimeAgent, RealtimeRunner
 
 from ..agents.factory import (
     create_author_system,
     create_reviewer_system,
-    create_author_realtime_system,
-    create_reviewer_realtime_system,
 )
 from ..rag.store import WeaviatePRRAGStore, set_rag_store
 from ..rag.schema import create_schema, delete_tenant, list_tenants
@@ -37,16 +35,15 @@ if TYPE_CHECKING:
 
 class PRSessionMode(str, Enum):
     """Session mode for PR Buddy."""
-    
+
     TEXT = "text"  # Text only, no audio
     PIPELINE = "pipeline"  # Whisper STT + Agent + TTS
-    REALTIME = "realtime"  # OpenAI Realtime API
 
 
 @dataclass
 class PRSessionConfig:
     """Configuration for creating a PR session."""
-    
+
     mode: PRSessionMode = PRSessionMode.TEXT
     session_type: Literal["author", "reviewer"] = "reviewer"
     tts_config: TTSVoiceConfig | None = None
@@ -56,18 +53,18 @@ class PRSessionConfig:
 @dataclass
 class PRSession:
     """A PR-scoped session."""
-    
+
     id: str
     pr_context: PRContext
     config: PRSessionConfig
     rag_store: WeaviatePRRAGStore
-    runner: TextSession | PipelineSession | RealtimeRunner
+    runner: TextSession | PipelineSession
     created_at: float = field(default_factory=lambda: __import__("time").time())
-    
+
     @property
     def mode(self) -> PRSessionMode:
         return self.config.mode
-    
+
     @property
     def session_type(self) -> str:
         return self.config.session_type
@@ -75,45 +72,45 @@ class PRSession:
 
 class PRSessionManager:
     """Manages PR-scoped sessions across voice and text modes.
-    
+
     Handles session creation, caching of RAG stores, and cleanup.
     """
-    
+
     def __init__(
         self,
         weaviate_client: weaviate.WeaviateClient,
     ) -> None:
         """Initialize the session manager.
-        
+
         Args:
             weaviate_client: Weaviate client for RAG storage.
         """
         self._weaviate = weaviate_client
         self._sessions: dict[str, PRSession] = {}
         self._pr_rag_stores: dict[str, WeaviatePRRAGStore] = {}
-        
+
         # Ensure schema exists
         create_schema(weaviate_client)
-    
+
     def _get_or_create_rag_store(self, pr_context: PRContext) -> WeaviatePRRAGStore:
         """Get or create a RAG store for a PR.
-        
+
         Args:
             pr_context: PR context.
-        
+
         Returns:
             WeaviatePRRAGStore instance.
         """
         tenant_name = pr_context.tenant_name
-        
+
         if tenant_name not in self._pr_rag_stores:
             self._pr_rag_stores[tenant_name] = WeaviatePRRAGStore(
                 self._weaviate,
                 pr_context,
             )
-        
+
         return self._pr_rag_stores[tenant_name]
-    
+
     async def create_session(
         self,
         pr_context: PRContext,
@@ -140,13 +137,11 @@ class PRSessionManager:
 
         # Load existing PRContext or fetch from GitHub and persist
         pr_context = await fetch_and_populate_context(pr_context, rag_store)
-        
+
         # Create session based on mode
         session_id = str(uuid4())
-        
-        if config.mode == PRSessionMode.REALTIME:
-            runner = await self._create_realtime_runner(pr_context, config)
-        elif config.mode == PRSessionMode.PIPELINE:
+
+        if config.mode == PRSessionMode.PIPELINE:
             runner = await self._create_pipeline_session(
                 session_id, pr_context, config, rag_store, on_event
             )
@@ -154,7 +149,7 @@ class PRSessionManager:
             runner = await self._create_text_session(
                 session_id, pr_context, config, rag_store, on_event
             )
-        
+
         session = PRSession(
             id=session_id,
             pr_context=pr_context,
@@ -162,24 +157,10 @@ class PRSessionManager:
             rag_store=rag_store,
             runner=runner,
         )
-        
+
         self._sessions[session_id] = session
         return session
-    
-    async def _create_realtime_runner(
-        self,
-        pr_context: PRContext,
-        config: PRSessionConfig,
-    ) -> RealtimeRunner:
-        """Create a realtime runner for voice mode."""
-        # Create realtime agent system based on session type
-        if config.session_type == "author":
-            system = await create_author_realtime_system()
-        else:
-            system = await create_reviewer_realtime_system()
-        
-        return RealtimeRunner(starting_agent=system.entry_point)
-    
+
     async def _create_pipeline_session(
         self,
         session_id: str,
@@ -214,7 +195,7 @@ class PRSessionManager:
             on_event=on_event,
             rag_store=rag_store,
         )
-    
+
     async def _create_text_session(
         self,
         session_id: str,
@@ -229,7 +210,7 @@ class PRSessionManager:
             system = await create_author_system()
         else:
             system = await create_reviewer_system()
-        
+
         return TextSession(
             session_id=session_id,
             agent=system.entry_point,
@@ -238,28 +219,28 @@ class PRSessionManager:
             on_event=on_event,
             rag_store=rag_store,
         )
-    
+
     def get_session(self, session_id: str) -> PRSession | None:
         """Get a session by ID."""
         return self._sessions.get(session_id)
-    
+
     def list_sessions(self) -> list[PRSession]:
         """List all active sessions."""
         return list(self._sessions.values())
-    
+
     def list_sessions_for_pr(self, pr_context: PRContext) -> list[PRSession]:
         """List sessions for a specific PR."""
         return [
             s for s in self._sessions.values()
             if s.pr_context.tenant_name == pr_context.tenant_name
         ]
-    
+
     async def delete_session(self, session_id: str) -> bool:
         """Delete a session.
-        
+
         Args:
             session_id: Session ID.
-        
+
         Returns:
             True if deleted, False if not found.
         """
@@ -270,20 +251,20 @@ class PRSessionManager:
                 await session.runner.end_session()
             return True
         return False
-    
+
     async def delete_pr_data(self, pr_context: PRContext) -> bool:
         """Delete all data for a PR.
-        
+
         Removes all sessions and the Weaviate tenant.
-        
+
         Args:
             pr_context: PR context.
-        
+
         Returns:
             True if deleted, False if not found.
         """
         tenant_name = pr_context.tenant_name
-        
+
         # Delete all sessions for this PR
         to_delete = [
             sid for sid, s in self._sessions.items()
@@ -291,36 +272,44 @@ class PRSessionManager:
         ]
         for sid in to_delete:
             await self.delete_session(sid)
-        
+
         # Remove cached RAG store
         self._pr_rag_stores.pop(tenant_name, None)
-        
+
         # Delete Weaviate tenant
         return delete_tenant(self._weaviate, tenant_name)
-    
+
     def list_prs(self) -> list[str]:
         """List all PRs with data."""
         return list_tenants(self._weaviate)
-    
+
     async def get_pr_status(self, pr_context: PRContext) -> dict[str, Any]:
         """Get status information for a PR.
-        
+
         Args:
             pr_context: PR context.
-        
+
         Returns:
-            Status dict with document counts, sessions, etc.
+            Status dict with document counts, sessions, PR info, etc.
         """
         rag_store = self._get_or_create_rag_store(pr_context)
-        
+
         doc_counts = await rag_store.get_document_types()
         total_docs = sum(doc_counts.values())
-        
+
         sessions = self.list_sessions_for_pr(pr_context)
-        
+
+        # Load PR context from repository to get title/description
+        repo = PRContextRepository(rag_store)
+        stored_context = await repo.load()
+
         return {
             "pr_id": pr_context.pr_id,
             "tenant_name": pr_context.tenant_name,
+            "title": stored_context.title if stored_context else None,
+            "description": stored_context.description if stored_context else None,
+            "author": stored_context.author if stored_context else None,
+            "state": stored_context.state if stored_context else None,
             "document_count": total_docs,
             "document_types": doc_counts,
             "active_sessions": len(sessions),
@@ -329,4 +318,3 @@ class PRSessionManager:
                 "reviewer": len([s for s in sessions if s.session_type == "reviewer"]),
             },
         }
-

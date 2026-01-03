@@ -38,34 +38,40 @@ logger = get_logger(__name__)
 
 class TextEventType(str, Enum):
     """Event types for text sessions."""
-    
+
     # User input received
     USER_MESSAGE = "user_message"
-    
+
     # Agent is processing
     AGENT_THINKING = "agent_thinking"
-    
+
     # Agent response (final)
     AGENT_RESPONSE = "agent_response"
-    
+
     # Agent response chunk (streaming)
     AGENT_RESPONSE_CHUNK = "agent_response_chunk"
-    
+
     # Tool invocation
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
-    
+
     # Session events
     SESSION_STARTED = "session_started"
     SESSION_ENDED = "session_ended"
-    
+
     # Handoff between agents
     AGENT_HANDOFF = "agent_handoff"
-    
+
     # Knowledge base events
     KB_INDEXED = "kb_indexed"
     KB_QUERIED = "kb_queried"
-    
+
+    # Sources used for answer (for UI display)
+    SOURCES_USED = "sources_used"
+
+    # Structured output metadata (confidence, sources, etc.)
+    STRUCTURED_METADATA = "structured_metadata"
+
     # Error occurred
     ERROR = "error"
 
@@ -126,6 +132,11 @@ class TextSession:
         self._save_counter = 0
         # Track active tool calls by ID for matching results
         self._active_tool_calls: dict[str, str] = {}  # call_id -> tool_name
+        # Also track as FIFO queue since SDK call_ids may not match between start/end
+        self._tool_call_queue: list[str] = []  # tool_names in FIFO order
+
+        # Track parent agent for auto-restore when Research doesn't hand back
+        self._parent_agent: Agent | None = None
 
         # Background task tracking - allows agent to continue if client disconnects
         self._active_task: asyncio.Task | None = None
@@ -152,6 +163,47 @@ class TextSession:
                 )
                 # Clear callback to avoid repeated failures
                 self._on_event = None
+
+    def _extract_response_and_metadata(self, raw_output: Any) -> tuple[str, dict[str, Any] | None]:
+        """Extract displayable text and metadata from agent output.
+
+        Handles both structured output (Pydantic models) and plain text.
+
+        Args:
+            raw_output: The raw output from the agent (could be str or Pydantic model).
+
+        Returns:
+            Tuple of (response_text, metadata_dict or None).
+        """
+        # Check for ReviewerResponse structured output
+        if hasattr(raw_output, 'answer'):
+            metadata = {
+                "confidence": getattr(raw_output, 'confidence', None),
+                "sources_used": getattr(raw_output, 'sources_used', []),
+                "needs_author_clarification": getattr(raw_output, 'needs_author_clarification', False),
+            }
+            return raw_output.answer, metadata
+
+        # Check for AuthorTrainingResponse structured output
+        if hasattr(raw_output, 'response') and hasattr(raw_output, 'question_type'):
+            metadata = {
+                "question_type": getattr(raw_output, 'question_type', None),
+                "topics_covered": getattr(raw_output, 'topics_covered', []),
+                "suggested_topics": getattr(raw_output, 'suggested_topics', []),
+            }
+            return raw_output.response, metadata
+
+        # Check for ResearchResponse structured output
+        if hasattr(raw_output, 'summary') and hasattr(raw_output, 'documents_indexed'):
+            metadata = {
+                "documents_indexed": getattr(raw_output, 'documents_indexed', 0),
+                "source_types": getattr(raw_output, 'source_types', []),
+                "unblocked_context_found": getattr(raw_output, 'unblocked_context_found', False),
+            }
+            return raw_output.summary, metadata
+
+        # Plain text output
+        return str(raw_output) if raw_output else "", None
 
     def set_event_callback(self, callback: "TextEventCallback | None") -> None:
         """Set or clear the event callback. Used for WebSocket reconnection."""
@@ -193,11 +245,13 @@ class TextSession:
                     if isinstance(item, ToolCallItem):
                         tool_name = item.raw_item.name if hasattr(item.raw_item, 'name') else "unknown"
                         tool_args = item.raw_item.arguments if hasattr(item.raw_item, 'arguments') else "{}"
-                        call_id = item.raw_item.id if hasattr(item.raw_item, 'id') else str(uuid4())
-                        
+                        # Use call_id if available (matches ToolCallOutputItem), fall back to id
+                        call_id = getattr(item.raw_item, 'call_id', None) or getattr(item.raw_item, 'id', None) or str(uuid4())
+
                         # Track this call for matching with result
                         self._active_tool_calls[call_id] = tool_name
-                        
+                        self._tool_call_queue.append(tool_name)
+
                         logger.info(
                             "Tool call started",
                             tool=tool_name,
@@ -227,15 +281,28 @@ class TextSession:
                     
                     # Tool call completed
                     elif isinstance(item, ToolCallOutputItem):
-                        # Get call_id from raw_item to look up tool name
-                        call_id = item.raw_item.call_id if hasattr(item.raw_item, 'call_id') else None
-                        tool_name = self._active_tool_calls.pop(call_id, "unknown") if call_id else "unknown"
-                        
+                        # raw_item can be either a dict or object depending on SDK version
+                        raw = item.raw_item or {}
+                        is_dict = isinstance(raw, dict)
+
+                        # Get call_id to look up tool name from stored ToolCallItem
+                        if is_dict:
+                            call_id = raw.get('call_id')
+                        else:
+                            call_id = getattr(raw, 'call_id', None)
+
+                        # Look up tool name from stored call (by call_id or FIFO queue)
+                        tool_name = self._active_tool_calls.pop(call_id, None) if call_id else None
+                        if tool_name is None and self._tool_call_queue:
+                            # SDK call_ids may not match - use FIFO queue as fallback
+                            tool_name = self._tool_call_queue.pop(0)
+                        tool_name = tool_name or "unknown"
+
                         # Truncate output for display
                         output_str = str(item.output)
                         if len(output_str) > 200:
                             output_str = output_str[:200] + "..."
-                        
+
                         # Check if tool failed
                         is_success = True
                         if isinstance(item.output, dict) and item.output.get("success") is False:
@@ -253,25 +320,91 @@ class TextSession:
                                 call_id=call_id,
                                 output_preview=output_str,
                             )
-                        
+
                         await self._emit(TextEventType.TOOL_RESULT, {
                             "tool": tool_name,
                             "call_id": call_id,
                             "success": is_success,
                             "output_preview": output_str,
                         })
+
+                        # Emit sources for query_rag results (for UI display)
+                        if tool_name == "query_rag":
+                            # Handle both dict and string output
+                            output = item.output
+                            logger.debug(
+                                "query_rag output debug",
+                                output_type=type(output).__name__,
+                                output_preview=str(output)[:300] if output else "None",
+                            )
+                            if isinstance(output, str):
+                                import json
+                                try:
+                                    output = json.loads(output)
+                                except json.JSONDecodeError:
+                                    logger.warning("Failed to parse query_rag output as JSON")
+                                    output = {}
+
+                            if isinstance(output, dict):
+                                results = output.get("results", [])
+                                logger.info(
+                                    "query_rag_citations",
+                                    count=len(results),
+                                    doc_types=[r.get("doc_type") for r in results[:5]] if results else [],
+                                )
+                                if results:
+                                    # Debug: log first result to see structure
+                                    if results:
+                                        logger.debug(
+                                            "First RAG result structure",
+                                            keys=list(results[0].keys()) if isinstance(results[0], dict) else "not a dict",
+                                            content_len=len(results[0].get("content", "")) if isinstance(results[0], dict) else 0,
+                                        )
+                                    sources = [
+                                        {
+                                            "doc_type": r.get("doc_type", "unknown"),
+                                            "preview": r.get("content", "")[:150] if r.get("content") else "",
+                                            "content": r.get("content", ""),  # Full content for modal
+                                            "source_url": r.get("source"),
+                                            "file_path": r.get("file_path"),
+                                        }
+                                        for r in results[:5]  # Limit to top 5 sources
+                                    ]
+                                    # Log first source to debug content issue
+                                    if sources:
+                                        first_src = sources[0]
+                                        logger.info(
+                                            "sources_used_emit",
+                                            count=len(sources),
+                                            has_content=[bool(s.get("content")) for s in sources],
+                                            first_content_len=len(first_src.get("content", "")),
+                                            first_preview_len=len(first_src.get("preview", "")),
+                                        )
+                                    await self._emit(TextEventType.SOURCES_USED, {
+                                        "sources": sources,
+                                    })
                     
                     # Handoff initiated
                     elif isinstance(item, HandoffCallItem):
-                        target = getattr(item, 'target_agent', None)
-                        target_name = target.name if target else "unknown"
-                        
+                        # Extract target from raw_item.name (e.g., "transfer_to_research" -> "Research")
+                        tool_name = getattr(item.raw_item, 'name', '') if item.raw_item else ''
+                        if tool_name.startswith('transfer_to_'):
+                            # Convert "transfer_to_research" -> "Research"
+                            target_name = tool_name.replace('transfer_to_', '').replace('_', ' ').title().replace(' ', '')
+                        else:
+                            target_name = getattr(item, 'target_agent', None)
+                            target_name = target_name.name if target_name else "unknown"
+
+                        # Track parent for auto-restore if Research doesn't hand back
+                        if target_name == "Research":
+                            self._parent_agent = self._current_agent
+
                         logger.info(
                             "Agent handoff initiated",
                             from_agent=current_agent_name,
                             to_agent=target_name,
                         )
-                        
+
                         await self._emit(TextEventType.AGENT_HANDOFF, {
                             "from": current_agent_name,
                             "to": target_name,
@@ -282,14 +415,17 @@ class TextSession:
                     elif isinstance(item, HandoffOutputItem):
                         target = getattr(item, 'target_agent', None)
                         if target:
+                            from_agent_name = self._current_agent.name
                             logger.info(
                                 "Agent handoff completed",
-                                from_agent=self._current_agent.name,
+                                from_agent=from_agent_name,
                                 to_agent=target.name,
                             )
+                            # Update both local variable and instance state
                             current_agent_name = target.name
+                            self._current_agent = target
                             await self._emit(TextEventType.AGENT_HANDOFF, {
-                                "from": self._current_agent.name,
+                                "from": from_agent_name,
                                 "to": target.name,
                                 "status": "completed",
                             })
@@ -301,20 +437,38 @@ class TextSession:
                         })
             
             # Get final result (must wait for streaming to complete)
-            response_text = result.final_output_as(str) or ""
-            
+            raw_output = result.final_output
+
+            # Handle structured output vs plain text
+            response_text, metadata = self._extract_response_and_metadata(raw_output)
+
+            # Emit structured metadata if present
+            if metadata:
+                await self._emit(TextEventType.STRUCTURED_METADATA, metadata)
+
             # Update current agent if changed
             if result.last_agent != self._current_agent:
                 self._current_agent = result.last_agent
-            
+
+            # Auto-restore parent if Research didn't hand back
+            if (self._current_agent.name == "Research" and
+                self._parent_agent is not None):
+                logger.info(
+                    "Auto-restoring parent agent (Research didn't hand back)",
+                    from_agent="Research",
+                    to_agent=self._parent_agent.name,
+                )
+                self._current_agent = self._parent_agent
+                self._parent_agent = None
+
             # Add assistant response to history
             self._history.append({"role": "assistant", "content": response_text})
-            
+
             # Save history periodically
             await self._save_history()
-            
+
             await self._emit(TextEventType.AGENT_RESPONSE, {"text": response_text})
-            
+
             return response_text
             
         except Exception as e:
@@ -507,16 +661,25 @@ class TextSession:
                                 "status": "completed",
                             })
             
-            response_text = result.final_output_as(str) or self._get_default_greeting()
-            
+            raw_output = result.final_output
+
+            # Handle structured output vs plain text
+            response_text, metadata = self._extract_response_and_metadata(raw_output)
+            if not response_text:
+                response_text = self._get_default_greeting()
+
+            # Emit structured metadata if present
+            if metadata:
+                await self._emit(TextEventType.STRUCTURED_METADATA, metadata)
+
             # Update current agent if changed
             if result.last_agent != self._current_agent:
                 self._current_agent = result.last_agent
-            
+
             await self._emit(TextEventType.AGENT_RESPONSE, {"text": response_text})
-            
+
             return response_text
-            
+
         except Exception as e:
             error_msg = f"Error generating greeting: {str(e)}"
             await self._emit(TextEventType.ERROR, {"error": error_msg})

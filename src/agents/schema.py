@@ -87,6 +87,11 @@ class AgentConfigSchema(BaseModel):
         description="If True, this is the starting agent for conversations"
     )
 
+    output_type: str | None = Field(
+        default=None,
+        description="Name of structured output type (e.g., 'ReviewerResponse'). If set, agent returns structured Pydantic objects."
+    )
+
 
 class AgentSystemSchema(BaseModel):
     """Schema for validating a complete agent system configuration.

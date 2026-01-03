@@ -55,7 +55,10 @@ class PipelineEventType(str, Enum):
     SESSION_STARTED = "session_started"
     SESSION_ENDED = "session_ended"
     AGENT_HANDOFF = "agent_handoff"
-    
+
+    # Structured output metadata (confidence, sources, etc.)
+    STRUCTURED_METADATA = "structured_metadata"
+
     # Error
     ERROR = "error"
 
@@ -158,6 +161,47 @@ class PipelineSession:
     def set_event_callback(self, callback: EventCallback | None) -> None:
         """Set or clear the event callback. Used for WebSocket reconnection."""
         self._on_event = callback
+
+    def _extract_response_and_metadata(self, raw_output: Any) -> tuple[str, dict[str, Any] | None]:
+        """Extract displayable text and metadata from agent output.
+
+        Handles both structured output (Pydantic models) and plain text.
+
+        Args:
+            raw_output: The raw output from the agent (could be str or Pydantic model).
+
+        Returns:
+            Tuple of (response_text, metadata_dict or None).
+        """
+        # Check for ReviewerResponse structured output
+        if hasattr(raw_output, 'answer'):
+            metadata = {
+                "confidence": getattr(raw_output, 'confidence', None),
+                "sources_used": getattr(raw_output, 'sources_used', []),
+                "needs_author_clarification": getattr(raw_output, 'needs_author_clarification', False),
+            }
+            return raw_output.answer, metadata
+
+        # Check for AuthorTrainingResponse structured output
+        if hasattr(raw_output, 'response') and hasattr(raw_output, 'question_type'):
+            metadata = {
+                "question_type": getattr(raw_output, 'question_type', None),
+                "topics_covered": getattr(raw_output, 'topics_covered', []),
+                "suggested_topics": getattr(raw_output, 'suggested_topics', []),
+            }
+            return raw_output.response, metadata
+
+        # Check for ResearchResponse structured output
+        if hasattr(raw_output, 'summary') and hasattr(raw_output, 'documents_indexed'):
+            metadata = {
+                "documents_indexed": getattr(raw_output, 'documents_indexed', 0),
+                "source_types": getattr(raw_output, 'source_types', []),
+                "unblocked_context_found": getattr(raw_output, 'unblocked_context_found', False),
+            }
+            return raw_output.summary, metadata
+
+        # Plain text output
+        return str(raw_output) if raw_output else "", None
 
     async def _load_history(self) -> None:
         """Load conversation history from RAG store."""
@@ -376,7 +420,12 @@ class PipelineSession:
             await self._emit(PipelineEventType.ERROR, {"error": "Agent timed out after 120 seconds"})
             return "I apologize, but I'm taking too long to respond. Please try again."
 
-        response = result.final_output if result.final_output else ""
+        # Handle structured output vs plain text
+        response, metadata = self._extract_response_and_metadata(result.final_output)
+
+        # Emit structured metadata if present
+        if metadata:
+            await self._emit(PipelineEventType.STRUCTURED_METADATA, metadata)
 
         # Check for handoff
         if result.last_agent != self._current_agent:
@@ -489,7 +538,15 @@ class PipelineSession:
                     ),
                     timeout=60.0,  # 1 minute timeout for greeting
                 )
-                greeting = result.final_output if result.final_output else "Hello! How can I help you?"
+                # Handle structured output vs plain text
+                greeting, metadata = self._extract_response_and_metadata(result.final_output)
+                if not greeting:
+                    greeting = "Hello! How can I help you?"
+
+                # Emit structured metadata if present
+                if metadata:
+                    await self._emit(PipelineEventType.STRUCTURED_METADATA, metadata)
+
             except asyncio.TimeoutError:
                 logger.error("greeting_timeout", agent=self._current_agent.name, timeout=60)
                 greeting = "Hello! I'm ready to help you with this PR. What would you like to discuss?"

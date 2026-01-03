@@ -13,9 +13,7 @@ from .config_manager import (
 )
 from .factory import (
     AgentSystem,
-    RealtimeAgentSystem,
     create_agent_system,
-    create_realtime_agent_system,
 )
 from .registry import ToolRegistry, MCPServerRegistry
 from .schema import AgentConfigSchema, AgentSystemSchema
@@ -30,9 +28,7 @@ __all__ = [
     "init_filesystem_config_manager",
     # Factory
     "AgentSystem",
-    "RealtimeAgentSystem",
     "create_agent_system",
-    "create_realtime_agent_system",
     # Registry
     "ToolRegistry",
     "MCPServerRegistry",
@@ -42,4 +38,3 @@ __all__ = [
     # Types
     "AgentContext",
 ]
-

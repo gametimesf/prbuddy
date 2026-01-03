@@ -383,20 +383,95 @@
             align-items: center;
             justify-content: center;
             font-size: 1.25rem;
+            position: relative;
         }
-        
+
         .mic-btn:hover {
             background: var(--bg-hover);
             color: var(--text-primary);
         }
-        
+
         .mic-btn.recording {
             background: var(--error);
             border-color: var(--error);
             color: white;
             animation: pulse 1.5s infinite;
+            box-shadow: 0 0 20px rgba(248, 113, 113, 0.4);
         }
-        
+
+        .mic-btn.recording::before {
+            content: '';
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 12px;
+            height: 12px;
+            background: var(--error);
+            border-radius: 50%;
+            border: 2px solid var(--bg-secondary);
+            animation: blink 0.8s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+
+        /* Listening indicator */
+        .listening-indicator {
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid var(--error);
+            border-radius: var(--radius-md);
+            margin-bottom: 1rem;
+        }
+
+        .listening-indicator.active {
+            display: flex;
+        }
+
+        .listening-dot {
+            width: 10px;
+            height: 10px;
+            background: var(--error);
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+
+        .listening-text {
+            font-size: 0.875rem;
+            color: var(--error);
+            font-weight: 500;
+        }
+
+        .listening-bars {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+            height: 20px;
+        }
+
+        .listening-bars span {
+            width: 3px;
+            background: var(--error);
+            border-radius: 2px;
+            animation: soundwave 0.5s infinite ease-in-out;
+        }
+
+        .listening-bars span:nth-child(1) { animation-delay: 0s; height: 8px; }
+        .listening-bars span:nth-child(2) { animation-delay: 0.1s; height: 14px; }
+        .listening-bars span:nth-child(3) { animation-delay: 0.2s; height: 10px; }
+        .listening-bars span:nth-child(4) { animation-delay: 0.3s; height: 16px; }
+        .listening-bars span:nth-child(5) { animation-delay: 0.4s; height: 12px; }
+
+        @keyframes soundwave {
+            0%, 100% { transform: scaleY(0.5); }
+            50% { transform: scaleY(1); }
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.7; }
@@ -989,10 +1064,17 @@
             </div>
             
             <div class="input-area">
+                <div class="listening-indicator" id="listeningIndicator">
+                    <span class="listening-dot"></span>
+                    <span class="listening-text">Listening...</span>
+                    <div class="listening-bars">
+                        <span></span><span></span><span></span><span></span><span></span>
+                    </div>
+                </div>
                 <div class="input-wrapper">
-                    <textarea 
-                        class="input-field" 
-                        id="messageInput" 
+                    <textarea
+                        class="input-field"
+                        id="messageInput"
                         placeholder="Explain your PR changes..."
                         rows="1"
                     ></textarea>
@@ -1109,6 +1191,7 @@
         const statusText = document.getElementById('statusText');
         const prBadge = document.getElementById('prBadge');
         const chatPanel = document.getElementById('chatPanel');
+        const listeningIndicator = document.getElementById('listeningIndicator');
         
         // Initialize
         if (!sessionId) {
@@ -1424,6 +1507,15 @@
                 'index_to_rag': 'Indexing Content',
                 'query_rag': 'Querying Knowledge',
                 'get_readiness_score': 'Calculating Readiness',
+                // Unblocked MCP tools
+                'unblocked_context_engine': 'Searching Context',
+                'unblocked_historical_context': 'Historical Context',
+                'unblocked_data_retrieval': 'Retrieving Data',
+                'unblocked_link_resolver': 'Resolving Links',
+                'unblocked_failure_debugging': 'Debugging',
+                'unblocked_user_feedback': 'User Feedback',
+                // Fallback for unknown
+                'unknown': 'Processing',
             };
             return names[toolName] || toolName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         }
@@ -1439,6 +1531,15 @@
                 'index_to_rag': '📥',
                 'query_rag': '🔍',
                 'get_readiness_score': '📊',
+                // Unblocked MCP tools
+                'unblocked_context_engine': '🔍',
+                'unblocked_historical_context': '📜',
+                'unblocked_data_retrieval': '📊',
+                'unblocked_link_resolver': '🔗',
+                'unblocked_failure_debugging': '🐛',
+                'unblocked_user_feedback': '📝',
+                // Fallback
+                'unknown': '⚙️',
             };
             return icons[toolName] || '🔧';
         }
@@ -1821,6 +1922,7 @@
                 isRecording = true;
                 micBtn.classList.add('recording');
                 micBtn.textContent = '⏹';
+                listeningIndicator.classList.add('active');
                 updateStatus('recording', 'Recording...');
 
             } catch (error) {
@@ -1930,6 +2032,7 @@
             isRecording = false;
             micBtn.classList.remove('recording');
             micBtn.textContent = '🎤';
+            listeningIndicator.classList.remove('active');
             updateStatus('connected', 'Connected');
 
             if (mediaStream) {

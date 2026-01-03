@@ -110,6 +110,14 @@
             font-family: var(--font-mono);
             font-size: 0.813rem;
             color: var(--accent);
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .pr-badge:hover {
+            background: var(--bg-hover);
+            color: var(--accent-hover);
         }
         
         .session-type {
@@ -274,62 +282,201 @@
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            margin-top: 0.75rem;
+            margin-right: 0.5rem;
         }
-        
+
         .confidence-badge.high {
             background: rgba(74, 222, 128, 0.15);
-            color: var(--confidence-high);
+            color: var(--success);
         }
-        
+
         .confidence-badge.medium {
             background: rgba(251, 191, 36, 0.15);
-            color: var(--confidence-medium);
+            color: var(--warning);
         }
-        
+
         .confidence-badge.low {
             background: rgba(248, 113, 113, 0.15);
-            color: var(--confidence-low);
+            color: var(--error);
         }
-        
-        /* Source citations */
-        .sources {
-            margin-top: 1rem;
-            padding-top: 0.75rem;
-            border-top: 1px solid var(--border);
+
+        /* Source citation icons (inline under messages) */
+        .message-footer {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            padding-top: 0.5rem;
         }
-        
-        .sources-title {
-            font-size: 0.688rem;
-            font-weight: 600;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 0.5rem;
+
+        .source-citations {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
         }
-        
-        .source-item {
+
+        .source-icon {
             display: inline-flex;
             align-items: center;
-            gap: 0.375rem;
-            padding: 0.25rem 0.5rem;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
             background: var(--bg-tertiary);
+            border: 1px solid var(--border);
             border-radius: var(--radius-sm);
             font-size: 0.75rem;
             color: var(--text-secondary);
-            margin-right: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .source-icon:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .source-icon.author { color: var(--success); border-color: rgba(74, 222, 128, 0.3); }
+        .source-icon.diff { color: var(--warning); border-color: rgba(251, 191, 36, 0.3); }
+        .source-icon.description { color: var(--accent); border-color: rgba(167, 139, 250, 0.3); }
+
+        /* Source tooltip on hover */
+        .source-icon .source-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 0.5rem 0.75rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+            z-index: 100;
+            margin-bottom: 4px;
+            pointer-events: none;
+        }
+
+        .source-icon:hover .source-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .source-tooltip-type {
+            font-weight: 600;
+            color: var(--text-primary);
             margin-bottom: 0.25rem;
         }
-        
-        .source-item a {
+
+        /* Source citation modal */
+        .source-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+
+        .source-modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            max-width: 700px;
+            width: 90%;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .source-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .source-modal-header h3 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .source-modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .source-modal-close:hover {
+            color: var(--text-primary);
+        }
+
+        .source-modal-body {
+            padding: 1.25rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .source-modal-content {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 1rem;
+            font-family: var(--font-mono);
+            font-size: 0.875rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text-secondary);
+        }
+
+        .source-modal-meta {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.813rem;
+            color: var(--text-muted);
+        }
+
+        .source-modal-meta span {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .source-modal-meta a {
             color: var(--accent);
             text-decoration: none;
         }
-        
-        .source-item a:hover {
+
+        .source-modal-meta a:hover {
             text-decoration: underline;
         }
-        
+
         /* Thinking indicator */
         .message.thinking .message-content {
             background: var(--bg-tertiary);
@@ -450,20 +597,361 @@
             align-items: center;
             justify-content: center;
             font-size: 1.25rem;
+            position: relative;
         }
-        
+
         .mic-btn:hover {
             background: var(--bg-hover);
             color: var(--text-primary);
         }
-        
+
         .mic-btn.recording {
             background: var(--error);
             border-color: var(--error);
             color: white;
             animation: pulse 1.5s infinite;
+            box-shadow: 0 0 20px rgba(248, 113, 113, 0.4);
         }
-        
+
+        .mic-btn.recording::before {
+            content: '';
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 12px;
+            height: 12px;
+            background: var(--error);
+            border-radius: 50%;
+            border: 2px solid var(--bg-secondary);
+            animation: blink 0.8s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+
+        /* Listening indicator */
+        .listening-indicator {
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid var(--error);
+            border-radius: var(--radius-md);
+            margin-bottom: 1rem;
+        }
+
+        .listening-indicator.active {
+            display: flex;
+        }
+
+        .listening-dot {
+            width: 10px;
+            height: 10px;
+            background: var(--error);
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+
+        .listening-text {
+            font-size: 0.875rem;
+            color: var(--error);
+            font-weight: 500;
+        }
+
+        .listening-bars {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+            height: 20px;
+        }
+
+        .listening-bars span {
+            width: 3px;
+            background: var(--error);
+            border-radius: 2px;
+            animation: soundwave 0.5s infinite ease-in-out;
+        }
+
+        .listening-bars span:nth-child(1) { animation-delay: 0s; height: 8px; }
+        .listening-bars span:nth-child(2) { animation-delay: 0.1s; height: 14px; }
+        .listening-bars span:nth-child(3) { animation-delay: 0.2s; height: 10px; }
+        .listening-bars span:nth-child(4) { animation-delay: 0.3s; height: 16px; }
+        .listening-bars span:nth-child(5) { animation-delay: 0.4s; height: 12px; }
+
+        @keyframes soundwave {
+            0%, 100% { transform: scaleY(0.5); }
+            50% { transform: scaleY(1); }
+        }
+
+        /* Context sidebar */
+        .context-panel {
+            width: 320px;
+            background: var(--bg-secondary);
+            overflow-y: auto;
+            border-left: 1px solid var(--border);
+        }
+
+        .context-section {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .context-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+
+        .stat {
+            background: var(--bg-tertiary);
+            padding: 0.75rem;
+            border-radius: var(--radius-sm);
+            text-align: center;
+        }
+
+        .stat.clickable {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .stat.clickable:hover {
+            background: var(--bg-hover);
+        }
+
+        .stat-value {
+            font-family: var(--font-mono);
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 0.688rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .pr-summary {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .pr-summary-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .pr-summary-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+
+        /* Sources section */
+        .sources-section {
+            display: none;
+        }
+
+        .sources-section.has-sources {
+            display: block;
+        }
+
+        .source-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .source-item-card {
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .source-item-card:hover {
+            background: var(--bg-hover);
+        }
+
+        .source-type-badge {
+            display: inline-block;
+            padding: 0.125rem 0.375rem;
+            background: var(--accent-dim);
+            color: white;
+            border-radius: var(--radius-sm);
+            font-size: 0.625rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 0.375rem;
+        }
+
+        .source-preview {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        /* View RAG button */
+        .view-rag-btn {
+            padding: 0.25rem 0.5rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .view-rag-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        /* RAG Modal */
+        .rag-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            overflow: auto;
+        }
+
+        .rag-modal.active {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .rag-modal-content {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 900px;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .rag-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .rag-modal-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .rag-modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .rag-modal-close:hover {
+            color: var(--text-primary);
+        }
+
+        .rag-modal-body {
+            padding: 1.5rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .rag-doc {
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+
+        .rag-doc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: var(--bg-hover);
+            cursor: pointer;
+        }
+
+        .rag-doc-header:hover {
+            background: var(--border);
+        }
+
+        .rag-doc-type {
+            display: inline-block;
+            padding: 0.125rem 0.5rem;
+            background: var(--accent-dim);
+            color: white;
+            border-radius: var(--radius-sm);
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .rag-doc-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .rag-doc-content {
+            display: none;
+            padding: 1rem;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+            background: var(--bg-primary);
+        }
+
+        .rag-doc.expanded .rag-doc-content {
+            display: block;
+        }
+
+        .rag-doc-toggle {
+            transition: transform 0.2s ease;
+        }
+
+        .rag-doc.expanded .rag-doc-toggle {
+            transform: rotate(180deg);
+        }
+
         /* Voice mode */
         .voice-mode .input-wrapper {
             display: none;
@@ -545,7 +1033,7 @@
         <div class="header-left">
             <button class="back-btn" onclick="window.location.href='/'">← Back</button>
             <div class="pr-info">
-                <span class="pr-badge" id="prBadge">Loading...</span>
+                <a class="pr-badge" id="prBadge" href="#" target="_blank" rel="noopener noreferrer">Loading...</a>
                 <span class="session-type">Reviewer Q&A</span>
             </div>
         </div>
@@ -562,19 +1050,26 @@
             <div class="chat-messages" id="chatMessages">
                 <!-- Messages will be added here -->
             </div>
-            
+
             <div class="input-area">
+                <div class="listening-indicator" id="listeningIndicator">
+                    <span class="listening-dot"></span>
+                    <span class="listening-text">Listening...</span>
+                    <div class="listening-bars">
+                        <span></span><span></span><span></span><span></span><span></span>
+                    </div>
+                </div>
                 <div class="suggested-questions" id="suggestedQuestions">
                     <button class="suggested-question" data-question="Why was this approach chosen?">Why was this approach chosen?</button>
                     <button class="suggested-question" data-question="What alternatives were considered?">What alternatives were considered?</button>
                     <button class="suggested-question" data-question="Are there any risks to be aware of?">Are there any risks to be aware of?</button>
                     <button class="suggested-question" data-question="How was this tested?">How was this tested?</button>
                 </div>
-                
+
                 <div class="input-wrapper">
-                    <textarea 
-                        class="input-field" 
-                        id="messageInput" 
+                    <textarea
+                        class="input-field"
+                        id="messageInput"
                         placeholder="Ask a question about this PR..."
                         rows="1"
                     ></textarea>
@@ -586,8 +1081,73 @@
                 </div>
             </div>
         </div>
+
+        <aside class="context-panel" id="contextPanel">
+            <div class="context-section">
+                <h3 class="context-title">PR Summary</h3>
+                <div id="prSummary" class="pr-summary">
+                    <p style="color: var(--text-muted);">Loading PR info...</p>
+                </div>
+            </div>
+
+            <div class="context-section">
+                <h3 class="context-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    Knowledge Base
+                    <button class="view-rag-btn" onclick="showRagModal()" title="View all RAG data">View All</button>
+                </h3>
+                <div class="stat-grid" id="statGrid">
+                    <div class="stat clickable" title="Author explanations from training">
+                        <div class="stat-value" id="explanationCount">0</div>
+                        <div class="stat-label">Explanations</div>
+                    </div>
+                    <div class="stat clickable" title="Code diff chunks">
+                        <div class="stat-value" id="diffCount">0</div>
+                        <div class="stat-label">Diffs</div>
+                    </div>
+                    <div class="stat clickable" title="PR description">
+                        <div class="stat-value" id="descCount">0</div>
+                        <div class="stat-label">Description</div>
+                    </div>
+                    <div class="stat clickable" title="PR comments">
+                        <div class="stat-value" id="commentCount">0</div>
+                        <div class="stat-label">Comments</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="context-section sources-section" id="sourcesSection">
+                <h3 class="context-title">Sources Used</h3>
+                <div id="sourcesList" class="source-list">
+                    <!-- Sources will be populated here -->
+                </div>
+            </div>
+
+            <div class="context-section">
+                <h3 class="context-title">How It Works</h3>
+                <div class="pr-summary" style="font-size: 0.8rem;">
+                    <p>This agent answers questions using only the knowledge base built during author training.</p>
+                    <p style="margin-top: 0.5rem;"><strong>Source icons</strong> under answers show what was used:</p>
+                    <p>💬 = author explanation</p>
+                    <p>📝 = code diff</p>
+                    <p>📋 = PR description</p>
+                </div>
+            </div>
+        </aside>
     </main>
-    
+
+    <!-- RAG Data Modal -->
+    <div class="rag-modal" id="ragModal" onclick="if(event.target === this) closeRagModal()">
+        <div class="rag-modal-content">
+            <div class="rag-modal-header">
+                <h2>RAG Knowledge Base</h2>
+                <button class="rag-modal-close" onclick="closeRagModal()">&times;</button>
+            </div>
+            <div class="rag-modal-body" id="ragModalBody">
+                <p style="color: var(--text-muted);">Loading...</p>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Parse URL parameters
         const params = new URLSearchParams(window.location.search);
@@ -623,6 +1183,7 @@
         const prBadge = document.getElementById('prBadge');
         const chatPanel = document.getElementById('chatPanel');
         const suggestedQuestions = document.getElementById('suggestedQuestions');
+        const listeningIndicator = document.getElementById('listeningIndicator');
         
         // Initialize
         if (!sessionId) {
@@ -657,12 +1218,20 @@
             
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                // Debug: log raw data for sources_used events
+                if (data.type === 'sources_used') {
+                    console.log('RAW sources_used event.data:', event.data);
+                    console.log('PARSED sources_used data:', JSON.stringify(data, null, 2));
+                }
                 handleMessage(data);
             };
         }
         
         // Track activity
         let activityCounter = 0;
+
+        // Track if we're waiting for agent response (for re-showing typing indicator)
+        let waitingForResponse = false;
         
         // Update connection status display
         function updateStatus(state, text) {
@@ -689,24 +1258,33 @@
                     break;
                     
                 case 'agent_response':
+                    waitingForResponse = false;
                     removeTypingIndicator();
-                    addAssistantMessage(data.data.text);
+                    // Pass pending sources and metadata to message, then clear them
+                    addAssistantMessage(data.data.text, pendingSources, pendingMetadata);
+                    pendingSources = [];
+                    pendingMetadata = null;
                     break;
-                    
+
                 case 'user_message':
                     addUserMessage(data.data.text);
                     break;
-                    
+
                 case 'agent_thinking':
+                    waitingForResponse = true;
                     showTypingIndicator();
                     break;
-                    
+
                 case 'tool_call':
                     showToolActivity(data.data);
                     break;
-                    
+
                 case 'tool_result':
                     hideToolActivity();
+                    // Re-show typing indicator if still waiting for response
+                    if (waitingForResponse) {
+                        showTypingIndicator();
+                    }
                     break;
                     
                 case 'kb_queried':
@@ -724,7 +1302,9 @@
                     if (transcriptText) {
                         if (transcriptRole === 'assistant') {
                             removeTypingIndicator();
-                            addAssistantMessage(transcriptText);
+                            addAssistantMessage(transcriptText, pendingSources, pendingMetadata);
+                            pendingSources = [];
+                            pendingMetadata = null;
                         } else {
                             addUserMessage(transcriptText);
                         }
@@ -744,6 +1324,36 @@
                     }
                     break;
                     
+                case 'sources_used':
+                    // Accumulate sources from multiple RAG queries
+                    console.log('sources_used event received:', data.data);
+                    if (data.data && data.data.sources) {
+                        console.log('Adding sources:', data.data.sources.length);
+                        // Debug: check if content is present
+                        data.data.sources.forEach((s, i) => {
+                            console.log(`Source ${i}: doc_type=${s.doc_type}, has_content=${!!s.content}, content_len=${s.content?.length || 0}`);
+                        });
+                        pendingSources = [...pendingSources, ...data.data.sources];
+                        displaySources(pendingSources);
+                    }
+                    break;
+
+                case 'structured_metadata':
+                    // Store structured metadata from agent (confidence, sources, etc.)
+                    if (data.data) {
+                        pendingMetadata = data.data;
+                        // Only use sources_used as fallback if we don't already have real sources
+                        // (sources_used from structured output are just type names, not full content)
+                        if (pendingSources.length === 0 && pendingMetadata.sources_used && pendingMetadata.sources_used.length > 0) {
+                            pendingSources = pendingMetadata.sources_used.map(s => ({
+                                doc_type: s,
+                                preview: ''
+                            }));
+                            displaySources(pendingSources);
+                        }
+                    }
+                    break;
+
                 case 'error':
                     addSystemMessage(`Error: ${data.data.error}`);
                     break;
@@ -794,10 +1404,17 @@
                 'fetch_file_content': 'Reading file...',
                 'query_rag': 'Searching knowledge base...',
                 'index_to_rag': 'Saving context...',
+                // Unblocked MCP tools
+                'unblocked_context_engine': 'Searching context...',
+                'unblocked_historical_context': 'Looking up history...',
+                'unblocked_data_retrieval': 'Retrieving data...',
+                'unblocked_link_resolver': 'Resolving links...',
+                // Fallback for unknown
+                'unknown': 'Processing...',
             };
             return names[toolName] || `Running ${toolName}...`;
         }
-        
+
         // Get icon for tool
         function getToolIcon(toolName) {
             const icons = {
@@ -808,21 +1425,15 @@
                 'fetch_file_content': '📖',
                 'query_rag': '🔍',
                 'index_to_rag': '📥',
+                // Unblocked MCP tools
+                'unblocked_context_engine': '🔍',
+                'unblocked_historical_context': '📜',
+                'unblocked_data_retrieval': '📊',
+                'unblocked_link_resolver': '🔗',
+                // Fallback
+                'unknown': '⚙️',
             };
             return icons[toolName] || '🔧';
-        }
-        
-        // Parse confidence from message text
-        function parseConfidence(text) {
-            const lowerText = text.toLowerCase();
-            if (lowerText.includes('high confidence') || lowerText.includes('**high')) {
-                return 'high';
-            } else if (lowerText.includes('medium confidence') || lowerText.includes('**medium')) {
-                return 'medium';
-            } else if (lowerText.includes('low confidence') || lowerText.includes('**low')) {
-                return 'low';
-            }
-            return null;
         }
         
         // Add user message
@@ -833,28 +1444,110 @@
             chatMessages.appendChild(msg);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
-        
-        // Add assistant message with confidence badge
-        function addAssistantMessage(text) {
-            const confidence = parseConfidence(text);
-            
+
+        // Get icon for source type
+        function getSourceIcon(docType) {
+            const icons = {
+                'author_explanation': '💬',
+                'diff': '📝',
+                'pr_description': '📋',
+                'pr_context': '📌',
+                'comment': '💭',
+                'file_content': '📄',
+                'unblocked': '🔍',
+            };
+            return icons[docType] || '📎';
+        }
+
+        // Get CSS class for source type
+        function getSourceClass(docType) {
+            if (docType === 'author_explanation') return 'author';
+            if (docType === 'diff') return 'diff';
+            if (docType === 'pr_description') return 'description';
+            return '';
+        }
+
+        // Derive confidence level from sources
+        function deriveConfidence(sources) {
+            if (!sources || sources.length === 0) return null;
+
+            // HIGH if we have author explanation
+            if (sources.some(s => s.doc_type === 'author_explanation')) {
+                return 'high';
+            }
+            // MEDIUM if we have diff or description
+            if (sources.some(s => ['diff', 'pr_description', 'pr_context'].includes(s.doc_type))) {
+                return 'medium';
+            }
+            // LOW for other sources
+            return 'low';
+        }
+
+        // Add assistant message with confidence badge and source citation icons
+        function addAssistantMessage(text, sources = [], metadata = null) {
             const msg = document.createElement('div');
             msg.className = 'message assistant';
-            
+
             let html = `<div class="message-content">${formatMessage(text)}`;
-            
-            if (confidence) {
-                const labels = {
-                    high: '✓ High Confidence',
-                    medium: '~ Medium Confidence',
-                    low: '! Low Confidence'
-                };
-                html += `<div class="confidence-badge ${confidence}">${labels[confidence]}</div>`;
+
+            // Use structured metadata confidence if available, otherwise derive from sources
+            const confidence = metadata?.confidence || deriveConfidence(sources);
+            const needsClarification = metadata?.needs_author_clarification;
+
+            if (confidence || (sources && sources.length > 0) || needsClarification) {
+                html += '<div class="message-footer">';
+
+                // Add confidence badge
+                if (confidence) {
+                    const labels = {
+                        high: '✓ High',
+                        medium: '~ Medium',
+                        low: '! Low'
+                    };
+                    html += `<div class="confidence-badge ${confidence}">${labels[confidence]}</div>`;
+                }
+
+                // Add "ask author" indicator if needed
+                if (needsClarification) {
+                    html += `<div class="confidence-badge low" title="Consider asking the author directly">❓ Ask Author</div>`;
+                }
+
+                // Add source citation icons
+                if (sources && sources.length > 0) {
+                    // Store full source data for modal display
+                    const msgId = ++messageSourceIndex;
+                    sourceDataStore[msgId] = sources;
+                    console.log('Storing sources for msgId', msgId, ':', sources.map(s => ({doc_type: s.doc_type, has_content: !!s.content, content_len: s.content?.length})));
+
+                    html += '<div class="source-citations">';
+                    sources.forEach((source, i) => {
+                        const icon = getSourceIcon(source.doc_type);
+                        const cssClass = getSourceClass(source.doc_type);
+                        const preview = escapeHtml(source.preview || source.content?.substring(0, 100) || '');
+                        const typeLabel = (source.doc_type || 'source').replace(/_/g, ' ');
+                        html += `
+                            <div class="source-icon ${cssClass}"
+                                 title="${typeLabel}"
+                                 data-msg-id="${msgId}"
+                                 data-source-idx="${i}"
+                                 onclick="showSourceModal(${msgId}, ${i})">
+                                ${icon}
+                                <div class="source-tooltip">
+                                    <div class="source-tooltip-type">${typeLabel}</div>
+                                    ${preview ? `<div>${preview.substring(0, 80)}${preview.length > 80 ? '...' : ''}</div>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                }
+
+                html += '</div>';
             }
-            
+
             html += '</div>';
             msg.innerHTML = html;
-            
+
             chatMessages.appendChild(msg);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
@@ -870,6 +1563,9 @@
         
         // Typing indicator
         function showTypingIndicator() {
+            // Don't add another if one already exists
+            if (document.getElementById('typingIndicator')) return;
+
             const indicator = document.createElement('div');
             indicator.className = 'message assistant thinking';
             indicator.id = 'typingIndicator';
@@ -918,11 +1614,13 @@
             return div.innerHTML;
         }
         
-        // Audio playback - plays PCM16 chunks from server
+        // Audio playback - plays PCM16 chunks from server with seamless scheduling
+        let nextPlayTime = 0;  // Track when next chunk should start
+
         async function playAudio(base64Audio) {
             // Skip audio playback in text mode
             if (mode === 'text') return;
-            
+
             // Decode base64 to ArrayBuffer
             const binaryString = atob(base64Audio);
             const bytes = new Uint8Array(binaryString.length);
@@ -934,54 +1632,70 @@
             audioQueue.push(bytes.buffer);
 
             if (!isPlaying) {
-                playNextAudio();
+                isPlaying = true;
+                updateStatus('connected', 'Playing...');
+                await initPlaybackContext();
+                nextPlayTime = playbackContext.currentTime;
+                processAudioQueue();
             }
         }
 
-        async function playNextAudio() {
-            if (audioQueue.length === 0) {
-                isPlaying = false;
-                updateStatus('connected', 'Connected');
-                return;
+        async function initPlaybackContext() {
+            if (!playbackContext || playbackContext.state === 'closed') {
+                playbackContext = new AudioContext({ sampleRate: outputSampleRate });
+            }
+            if (playbackContext.state === 'suspended') {
+                await playbackContext.resume();
+            }
+        }
+
+        function processAudioQueue() {
+            // Schedule all queued chunks with precise timing
+            while (audioQueue.length > 0) {
+                const audioData = audioQueue.shift();
+
+                try {
+                    // Convert PCM16 to float32
+                    const pcm16 = new Int16Array(audioData);
+                    const float32 = new Float32Array(pcm16.length);
+                    for (let i = 0; i < pcm16.length; i++) {
+                        float32[i] = pcm16[i] / 32768.0;
+                    }
+
+                    // Create audio buffer
+                    const audioBuffer = playbackContext.createBuffer(1, float32.length, outputSampleRate);
+                    audioBuffer.getChannelData(0).set(float32);
+
+                    // Schedule playback at precise time (no gaps)
+                    const source = playbackContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(playbackContext.destination);
+
+                    // Ensure we don't schedule in the past
+                    const startTime = Math.max(nextPlayTime, playbackContext.currentTime);
+                    source.start(startTime);
+
+                    // Update next play time
+                    nextPlayTime = startTime + audioBuffer.duration;
+
+                } catch (error) {
+                    console.error('Playback error:', error);
+                }
             }
 
-            isPlaying = true;
-            updateStatus('connected', 'Playing...');
-            const audioData = audioQueue.shift();
-
-            try {
-                // Create separate playback AudioContext if needed
-                if (!playbackContext || playbackContext.state === 'closed') {
-                    playbackContext = new AudioContext({ sampleRate: outputSampleRate });
+            // Check if more audio arrives
+            setTimeout(() => {
+                if (audioQueue.length > 0) {
+                    processAudioQueue();
+                } else if (playbackContext && playbackContext.currentTime >= nextPlayTime - 0.1) {
+                    // All audio played
+                    isPlaying = false;
+                    updateStatus('connected', 'Connected');
+                } else {
+                    // Still playing, check again
+                    setTimeout(arguments.callee, 100);
                 }
-                
-                // Resume if suspended (browser autoplay policy)
-                if (playbackContext.state === 'suspended') {
-                    await playbackContext.resume();
-                }
-
-                // Convert PCM16 to float32
-                const pcm16 = new Int16Array(audioData);
-                const float32 = new Float32Array(pcm16.length);
-                for (let i = 0; i < pcm16.length; i++) {
-                    float32[i] = pcm16[i] / 32768.0;
-                }
-
-                // Create audio buffer at the correct sample rate
-                const audioBuffer = playbackContext.createBuffer(1, float32.length, outputSampleRate);
-                audioBuffer.getChannelData(0).set(float32);
-
-                // Play
-                const source = playbackContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(playbackContext.destination);
-                source.onended = playNextAudio;
-                source.start();
-
-            } catch (error) {
-                console.error('Playback error:', error);
-                playNextAudio(); // Try next chunk
-            }
+            }, 50);
         }
         
         // Microphone recording - uses AudioWorklet for continuous PCM16 streaming
@@ -1014,6 +1728,7 @@
                 isRecording = true;
                 micBtn.classList.add('recording');
                 micBtn.textContent = '⏹';
+                listeningIndicator.classList.add('active');
                 updateStatus('recording', 'Recording...');
 
             } catch (error) {
@@ -1123,6 +1838,7 @@
             isRecording = false;
             micBtn.classList.remove('recording');
             micBtn.textContent = '🎤';
+            listeningIndicator.classList.remove('active');
             updateStatus('connected', 'Connected');
 
             if (mediaStream) {
@@ -1172,10 +1888,299 @@
                 sendMessage();
             });
         });
-        
-        // Start connection
+
+        // Parse PR ID like "owner/repo#123"
+        function parsePrId(prId) {
+            const match = prId.match(/^(.+)\/(.+)#(\d+)$/);
+            if (match) {
+                return { owner: match[1], repo: match[2], number: parseInt(match[3]) };
+            }
+            return null;
+        }
+
+        // Initialize session info
+        async function initSession() {
+            try {
+                const response = await fetch(`/api/sessions`);
+                const data = await response.json();
+                const session = data.sessions.find(s => s.id === sessionId);
+
+                if (session) {
+                    prBadge.textContent = session.pr_id;
+                    // Build GitHub URL from PR ID
+                    const prInfo = parsePrId(session.pr_id);
+                    if (prInfo) {
+                        prBadge.href = `https://github.com/${prInfo.owner}/${prInfo.repo}/pull/${prInfo.number}`;
+                        window.prInfo = prInfo;
+                        // Fetch PR summary and KB stats
+                        fetchPrSummary(prInfo);
+                        pollKbStats();
+                    }
+                } else {
+                    prBadge.textContent = 'Unknown PR';
+                }
+            } catch (err) {
+                console.error('Failed to get session info:', err);
+                prBadge.textContent = 'Unknown PR';
+            }
+        }
+
+        // Fetch PR summary from API
+        async function fetchPrSummary(prInfo) {
+            const prSummary = document.getElementById('prSummary');
+            try {
+                const response = await fetch(`/api/pr/${prInfo.owner}/${prInfo.repo}/${prInfo.number}/status`);
+                if (response.ok) {
+                    const status = await response.json();
+                    prSummary.innerHTML = `
+                        <div class="pr-summary-title">${status.title || 'Untitled PR'}</div>
+                        <div>${status.description ? status.description.substring(0, 150) + (status.description.length > 150 ? '...' : '') : 'No description'}</div>
+                        <div class="pr-summary-meta">
+                            ${status.author ? `By ${status.author}` : ''}
+                            ${status.changed_files ? ` · ${status.changed_files} files` : ''}
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                console.error('Failed to fetch PR summary:', err);
+                prSummary.innerHTML = '<p style="color: var(--text-muted);">Could not load PR info</p>';
+            }
+        }
+
+        // Poll KB stats
+        async function pollKbStats() {
+            if (!window.prInfo) return;
+            const { owner, repo, number } = window.prInfo;
+
+            try {
+                const response = await fetch(`/api/pr/${owner}/${repo}/${number}/status`);
+                if (response.ok) {
+                    const status = await response.json();
+                    const types = status.document_types || {};
+                    document.getElementById('explanationCount').textContent = types.author_explanation || 0;
+                    document.getElementById('diffCount').textContent = types.diff || 0;
+                    document.getElementById('descCount').textContent = types.description || 0;
+                    document.getElementById('commentCount').textContent = types.comment || 0;
+                }
+            } catch (err) {
+                console.error('Failed to poll KB stats:', err);
+            }
+        }
+
+        // Track pending sources for display with response
+        let pendingSources = [];
+        let pendingMetadata = null;  // Structured metadata from agent
+
+        // Store full source data for modal display (keyed by message index)
+        let sourceDataStore = {};
+        let messageSourceIndex = 0;
+
+        // Display sources used for last answer
+        function displaySources(sources) {
+            const sourcesSection = document.getElementById('sourcesSection');
+            const sourcesList = document.getElementById('sourcesList');
+
+            if (!sources || sources.length === 0) {
+                sourcesSection.classList.remove('has-sources');
+                return;
+            }
+
+            sourcesSection.classList.add('has-sources');
+            sourcesList.innerHTML = sources.map(source => `
+                <div class="source-item-card" title="${escapeHtml(source.preview || '')}">
+                    <span class="source-type-badge">${source.doc_type || 'unknown'}</span>
+                    <div class="source-preview">${escapeHtml(source.preview || source.content?.substring(0, 100) || 'No preview')}</div>
+                </div>
+            `).join('');
+        }
+
+        // Show source citation modal with full content
+        function showSourceModal(msgId, sourceIdx) {
+            console.log('showSourceModal called:', { msgId, sourceIdx, storeKeys: Object.keys(sourceDataStore) });
+            const sources = sourceDataStore[msgId];
+            console.log('sources from store:', sources);
+            if (!sources || !sources[sourceIdx]) return;
+
+            const source = sources[sourceIdx];
+            console.log('source object:', source, 'has_content:', !!source.content, 'content_len:', source.content?.length);
+            const modal = document.getElementById('sourceModal');
+            const typeLabel = (source.doc_type || 'source').replace(/_/g, ' ');
+            const icon = getSourceIcon(source.doc_type);
+
+            document.getElementById('sourceModalIcon').textContent = icon;
+            document.getElementById('sourceModalType').textContent = typeLabel;
+
+            // Show file path if available
+            const fileEl = document.getElementById('sourceModalFile');
+            if (source.file_path) {
+                fileEl.innerHTML = `&#128196; ${escapeHtml(source.file_path)}`;
+                fileEl.style.display = 'flex';
+            } else {
+                fileEl.style.display = 'none';
+            }
+
+            // Show source URL if available
+            const urlEl = document.getElementById('sourceModalUrl');
+            if (source.source_url) {
+                urlEl.innerHTML = `<a href="${source.source_url}" target="_blank" rel="noopener noreferrer">View Source</a>`;
+                urlEl.style.display = 'flex';
+            } else {
+                urlEl.style.display = 'none';
+            }
+
+            // Show full content
+            const content = source.content || source.preview || 'No content available';
+            document.getElementById('sourceModalContent').textContent = content;
+
+            modal.style.display = 'flex';
+        }
+
+        // Close source modal
+        function closeSourceModal() {
+            document.getElementById('sourceModal').style.display = 'none';
+        }
+
+        // Show RAG data modal
+        async function showRagModal() {
+            const modal = document.getElementById('ragModal');
+            const body = document.getElementById('ragModalBody');
+            modal.classList.add('active');
+            body.innerHTML = '<p style="color: var(--text-muted);">Loading...</p>';
+
+            if (!window.prInfo) {
+                body.innerHTML = '<p style="color: var(--error);">PR info not available</p>';
+                return;
+            }
+
+            try {
+                const { owner, repo, number } = window.prInfo;
+                const response = await fetch(`/api/pr/${owner}/${repo}/${number}/documents?limit=500`);
+                if (!response.ok) throw new Error('Failed to fetch RAG data');
+
+                const data = await response.json();
+                const docs = data.documents || [];
+
+                if (docs.length === 0) {
+                    body.innerHTML = '<p style="color: var(--text-muted);">No documents in knowledge base</p>';
+                    return;
+                }
+
+                // Group by doc_type
+                const grouped = {};
+                docs.forEach(doc => {
+                    const type = doc.doc_type || 'unknown';
+                    if (!grouped[type]) grouped[type] = [];
+                    grouped[type].push(doc);
+                });
+
+                let html = '';
+                for (const [type, typeDocs] of Object.entries(grouped)) {
+                    html += `<h4 style="margin: 1rem 0 0.5rem; color: var(--text-secondary); text-transform: uppercase; font-size: 0.75rem;">${type} (${typeDocs.length})</h4>`;
+                    typeDocs.forEach((doc, idx) => {
+                        const preview = doc.content_preview || '(no content)';
+                        const fileInfo = doc.file_path ? `📁 ${doc.file_path}` : '';
+                        const urlInfo = doc.source_url ? `🔗 ${doc.source_url}` : '';
+                        html += `
+                            <div class="rag-doc" id="rag-doc-${type}-${idx}" data-doc-id="${doc.id}">
+                                <div class="rag-doc-header" onclick="toggleRagDoc('${type}-${idx}')">
+                                    <div>
+                                        <span class="rag-doc-type">${type}</span>
+                                        <span class="rag-doc-meta">${fileInfo} ${urlInfo}</span>
+                                    </div>
+                                    <span class="rag-doc-toggle">▼</span>
+                                </div>
+                                <div class="rag-doc-content" data-loaded="false">${escapeHtml(preview)}</div>
+                            </div>
+                        `;
+                    });
+                }
+
+                body.innerHTML = html;
+
+            } catch (err) {
+                body.innerHTML = `<p style="color: var(--error);">Error: ${err.message}</p>`;
+            }
+        }
+
+        // Close RAG modal
+        function closeRagModal() {
+            document.getElementById('ragModal').classList.remove('active');
+        }
+
+        // Toggle RAG document expansion (fetches full content on first expand)
+        async function toggleRagDoc(id) {
+            const doc = document.getElementById(`rag-doc-${id}`);
+            if (!doc) return;
+
+            const contentEl = doc.querySelector('.rag-doc-content');
+            const isExpanding = !doc.classList.contains('expanded');
+
+            doc.classList.toggle('expanded');
+
+            // Fetch full content on first expand
+            if (isExpanding && contentEl.dataset.loaded === 'false') {
+                const docId = doc.dataset.docId;
+                if (docId && window.prInfo) {
+                    const { owner, repo, number } = window.prInfo;
+                    try {
+                        contentEl.textContent = 'Loading full content...';
+                        const response = await fetch(`/api/pr/${owner}/${repo}/${number}/documents/${docId}`);
+                        if (response.ok) {
+                            const fullDoc = await response.json();
+                            contentEl.textContent = fullDoc.content || '(no content)';
+                            contentEl.dataset.loaded = 'true';
+                        }
+                    } catch (err) {
+                        contentEl.textContent = `Error loading: ${err.message}`;
+                    }
+                }
+            }
+        }
+
+        // Close modal on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeSourceModal();
+                closeRagModal();
+            }
+        });
+
+        // Set up modal click-outside handler after DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('sourceModal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        closeSourceModal();
+                    }
+                });
+            }
+        });
+
+        // Start connection and initialize
         connect();
+        initSession();
+
+        // Poll KB stats periodically
+        setInterval(pollKbStats, 10000);
     </script>
+
+    <!-- Source Citation Modal -->
+    <div class="source-modal-overlay" id="sourceModal" style="display: none;">
+        <div class="source-modal">
+            <div class="source-modal-header">
+                <h3><span id="sourceModalIcon"></span> <span id="sourceModalType">Source</span></h3>
+                <button class="source-modal-close" onclick="closeSourceModal()">&times;</button>
+            </div>
+            <div class="source-modal-body">
+                <div class="source-modal-meta">
+                    <span id="sourceModalFile"></span>
+                    <span id="sourceModalUrl"></span>
+                </div>
+                <div class="source-modal-content" id="sourceModalContent"></div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
 

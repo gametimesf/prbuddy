@@ -120,9 +120,9 @@ class CreateSessionRequest(BaseModel):
     """Request to create a new PR session."""
     
     pr_url: str = Field(..., description="GitHub PR URL or owner/repo#number")
-    mode: Literal["text", "pipeline", "realtime"] = Field(
+    mode: Literal["text", "pipeline"] = Field(
         default="text",
-        description="Session mode: text, pipeline, or realtime"
+        description="Session mode: text or pipeline (voice)"
     )
     session_type: Literal["author", "reviewer"] = Field(
         default="author",
@@ -150,8 +150,12 @@ class CreateSessionResponse(BaseModel):
 
 class PRStatusResponse(BaseModel):
     """Response with PR status information."""
-    
+
     pr_id: str
+    title: str | None = None
+    description: str | None = None
+    author: str | None = None
+    state: str | None = None
     document_count: int
     document_types: dict[str, int]
     active_sessions: int
@@ -360,9 +364,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
     
     try:
-        if session.mode == PRSessionMode.REALTIME:
-            await _handle_realtime_session(websocket, session)
-        elif session.mode == PRSessionMode.PIPELINE:
+        if session.mode == PRSessionMode.PIPELINE:
             await _handle_pipeline_session(websocket, session)
         else:
             await _handle_text_session(websocket, session)
@@ -383,6 +385,19 @@ async def _handle_text_session(websocket: WebSocket, session):
 
     # Set up event callback
     async def on_event(event: TextEvent):
+        # Debug: log sources_used events to verify content is included
+        if event.type.value == "sources_used":
+            sources = event.data.get("sources", [])
+            logger.info(
+                "ws_send_sources_used",
+                num_sources=len(sources),
+                first_has_content=bool(sources[0].get("content")) if sources else False,
+                first_content_len=len(sources[0].get("content", "")) if sources else 0,
+                first_preview_len=len(sources[0].get("preview", "")) if sources else 0,
+            )
+            # Log full first source to verify all fields
+            if sources:
+                logger.info("ws_send_first_source", source=sources[0])
         await websocket.send_json({
             "type": event.type.value,
             "data": event.data,
@@ -617,59 +632,6 @@ async def _handle_pipeline_session(websocket: WebSocket, session):
                 task_running=True,
             )
         raise
-
-
-async def _handle_realtime_session(websocket: WebSocket, session):
-    """Handle realtime-mode WebSocket session.
-    
-    Uses OpenAI Realtime API through the RealtimeRunner.
-    """
-    import base64
-    from agents.realtime import RealtimeSession
-    
-    runner = session.runner
-    
-    # Create a custom audio handler that sends to WebSocket
-    class WebSocketAudioHandler:
-        def __init__(self, ws: WebSocket):
-            self.ws = ws
-        
-        async def send_audio(self, audio: bytes):
-            await self.ws.send_json({
-                "type": "audio",
-                "audio": base64.b64encode(audio).decode("utf-8"),
-            })
-        
-        async def send_text(self, text: str, is_final: bool = False):
-            await self.ws.send_json({
-                "type": "transcript" if is_final else "transcript_delta",
-                "text": text,
-            })
-    
-    audio_handler = WebSocketAudioHandler(websocket)
-    
-    # Start the realtime session
-    async with runner.run() as realtime_session:
-        # Send initial greeting prompt
-        await realtime_session.send_user_text("Hello, I'm ready to discuss this PR.")
-        
-        # Message loop
-        while True:
-            try:
-                data = await asyncio.wait_for(websocket.receive_json(), timeout=0.1)
-                
-                if data.get("type") == "audio":
-                    audio = base64.b64decode(data.get("audio", ""))
-                    await realtime_session.send_audio(audio)
-                elif data.get("type") == "message":
-                    text = data.get("text", "")
-                    await realtime_session.send_user_text(text)
-                elif data.get("type") == "end":
-                    break
-                    
-            except asyncio.TimeoutError:
-                # Process any pending events from the realtime session
-                pass
 
 
 # Static files

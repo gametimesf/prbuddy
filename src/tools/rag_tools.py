@@ -12,21 +12,36 @@ from ..agents.registry import ToolRegistry
 from ..rag.store import get_rag_store
 
 
+# Doc types that should NOT be included in search results
+# These are for persistence/system use, not answering questions
+EXCLUDED_DOC_TYPES = {
+    "conversation_author",
+    "conversation_reviewer",
+    "pr_context",
+}
+
+
 async def query_rag_impl(
     question: str,
     top_k: int = 5,
     doc_types: list[str] | None = None,
 ) -> dict[str, Any]:
     """Search the PR knowledge base for relevant context.
-    
+
     Uses hybrid search (combining keyword and semantic similarity)
     to find the most relevant documents for a given question.
-    
+
+    IMPORTANT: Use specific, targeted queries. Don't use generic queries like
+    "PR purpose" for every question. Tailor the query to what you're looking for:
+    - For "why" questions: query for "reason", "decision", "motivation"
+    - For "how" questions: query for "implementation", "mechanism", "approach"
+    - For specific topics: query for that topic directly
+
     Args:
-        question: The question or search query.
-        top_k: Number of results to return (default: 5).
+        question: The search query - be SPECIFIC to the user's question.
+        top_k: Number of results to return (default: 5, increase for broad questions).
         doc_types: Optional filter by document types (e.g., ["diff", "author_explanation"]).
-    
+
     Returns:
         Dict with success status and list of matching documents.
         Each document includes content, doc_type, source_url, and relevance score.
@@ -38,14 +53,20 @@ async def query_rag_impl(
             "success": False,
             "error": "RAG store not initialized. PR context may not be set.",
         }
-    
+
     try:
         results = await store.query(
             question,
             top_k=top_k,
             doc_types=doc_types,
         )
-        
+
+        # Filter out excluded doc types (conversation history, system context)
+        filtered_results = [
+            r for r in results
+            if r.doc_type not in EXCLUDED_DOC_TYPES
+        ]
+
         return {
             "success": True,
             "results": [
@@ -56,9 +77,9 @@ async def query_rag_impl(
                     "file_path": r.file_path,
                     "score": r.score,
                 }
-                for r in results
+                for r in filtered_results
             ],
-            "count": len(results),
+            "count": len(filtered_results),
         }
     except Exception as e:
         return {
