@@ -9,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Markdown parser -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- VAD is now implemented using Web Audio API (no external library needed) -->
     <style>
         :root {
             --bg-primary: #0a0a0b;
@@ -1158,7 +1159,8 @@
         let ws = null;
         let isRecording = false;
         let isPlaying = false;
-        
+        let isInAudioStream = false;  // True between audio_start and audio_end (reliable for VAD)
+
         // Audio recording (using AudioWorklet for continuous PCM16 streaming)
         let recordContext = null;
         let mediaStream = null;
@@ -1166,12 +1168,18 @@
         
         // Audio playback
         let playbackContext = null;
+        let masterGain = null;  // Gain node for instant muting
         let audioQueue = [];
-        
+        let activeAudioSources = [];  // Track all scheduled BufferSourceNodes for barge-in
+
         // Sample rates - set by server in 'ready' event
         let inputSampleRate = 24000;   // For mic/Whisper
         let outputSampleRate = 16000;  // For TTS playback (16kHz for Polly)
-        
+
+        // Voice Activity Detection (VAD) for barge-in
+        let vadInstance = null;
+        let vadEnabled = true;  // User can toggle if needed
+
         // DOM elements
         const chatMessages = document.getElementById('chatMessages');
         const messageInput = document.getElementById('messageInput');
@@ -1252,8 +1260,12 @@
                         console.log(`Audio config: input=${inputSampleRate}Hz, output=${outputSampleRate}Hz`);
                     }
                     updateStatus('connected', 'Connected');
+                    // Initialize VAD for barge-in detection in voice mode
+                    if (mode !== 'text') {
+                        initVAD();
+                    }
                     break;
-                    
+
                 case 'session_started':
                     break;
                     
@@ -1311,12 +1323,20 @@
                     }
                     break;
                     
+                case 'audio_start':
+                    handleAudioStart();
+                    break;
+
+                case 'audio_end':
+                    handleAudioEnd();
+                    break;
+
                 case 'audio_chunk':
                     if (data.data && data.data.audio) {
                         playAudio(data.data.audio);
                     }
                     break;
-                    
+
                 case 'audio':
                     // Pipeline mode audio response
                     if (data.audio) {
@@ -1562,10 +1582,13 @@
         }
         
         // Typing indicator
+        let isAgentResponding = false;
+
         function showTypingIndicator() {
             // Don't add another if one already exists
             if (document.getElementById('typingIndicator')) return;
 
+            isAgentResponding = true;
             const indicator = document.createElement('div');
             indicator.className = 'message assistant thinking';
             indicator.id = 'typingIndicator';
@@ -1581,8 +1604,157 @@
         function removeTypingIndicator() {
             const indicator = document.getElementById('typingIndicator');
             if (indicator) indicator.remove();
+            isAgentResponding = false;
         }
-        
+
+        // Interrupt the agent's current response (for voice mode)
+        function interruptAgent() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({ type: 'interrupt' }));
+            removeTypingIndicator();
+            // Stop any playing audio immediately
+            stopAudioPlayback();
+        }
+
+        // Fully stop audio playback and reset state
+        function stopAudioPlayback() {
+            console.log('Stopping audio playback - stopping', activeAudioSources.length, 'sources');
+
+            // Instantly mute via gain node (faster than waiting for sources to stop)
+            if (masterGain) {
+                masterGain.gain.setValueAtTime(0, playbackContext?.currentTime || 0);
+            }
+
+            // Stop all scheduled audio sources immediately
+            for (const source of activeAudioSources) {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Source might already be stopped
+                }
+            }
+            activeAudioSources = [];
+
+            isPlaying = false;
+            isInAudioStream = false;  // Reset audio stream state
+            audioQueue = [];
+
+            // Close context to fully stop and release resources
+            if (playbackContext && playbackContext.state !== 'closed') {
+                playbackContext.close().catch(() => {});
+                playbackContext = null;
+                masterGain = null;
+            }
+        }
+
+        // Handle audio stream start - reset state and force fresh context
+        function handleAudioStart() {
+            console.log('Audio stream starting - resetting playback state');
+            // Stop any existing scheduled sources
+            for (const source of activeAudioSources) {
+                try { source.stop(); } catch (e) {}
+            }
+            activeAudioSources = [];
+
+            // Force close any existing context to prevent old audio from resuming
+            if (playbackContext && playbackContext.state !== 'closed') {
+                if (masterGain) masterGain.gain.value = 0;
+                playbackContext.close().catch(() => {});
+                playbackContext = null;
+                masterGain = null;
+            }
+            audioQueue = [];
+            isPlaying = false;
+            isInAudioStream = true;  // Track that we're receiving audio (for VAD)
+            nextPlayTime = 0;
+        }
+
+        // Handle audio stream end
+        function handleAudioEnd() {
+            // NOTE: Don't set isInAudioStream = false here!
+            // The audio is still playing on the client. It will be set false
+            // when playback actually completes or is stopped.
+        }
+
+        // Initialize simple VAD for barge-in detection using Web Audio API
+        async function initVAD() {
+            if (mode === 'text' || vadInstance) return;
+
+            try {
+                console.log('Initializing simple VAD for barge-in detection...');
+
+                // Get mic stream for VAD (separate from recording stream)
+                const vadStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    }
+                });
+
+                const vadContext = new AudioContext();
+                const source = vadContext.createMediaStreamSource(vadStream);
+                const analyser = vadContext.createAnalyser();
+                analyser.fftSize = 512;
+                analyser.smoothingTimeConstant = 0.5;
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                const VAD_THRESHOLD = 20;  // Lower = more sensitive
+                let speechStartTime = 0;
+                const MIN_SPEECH_DURATION = 100;  // ms of speech before triggering (faster response)
+
+                // Check for voice activity periodically
+                function checkVAD() {
+                    if (!vadEnabled) {
+                        requestAnimationFrame(checkVAD);
+                        return;
+                    }
+
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+
+                    if (average > VAD_THRESHOLD) {
+                        if (speechStartTime === 0) {
+                            speechStartTime = Date.now();
+                        } else if (Date.now() - speechStartTime > MIN_SPEECH_DURATION) {
+                            // Sustained speech detected
+                            if ((isPlaying || isInAudioStream) && !isRecording) {
+                                console.log('VAD: Speech detected during playback - barge-in!');
+                                handleBargeIn();
+                                speechStartTime = 0;  // Reset after triggering
+                            }
+                        }
+                    } else {
+                        speechStartTime = 0;  // Reset on silence
+                    }
+
+                    requestAnimationFrame(checkVAD);
+                }
+
+                checkVAD();
+                vadInstance = { stream: vadStream, context: vadContext };
+                console.log('Simple VAD initialized - barge-in enabled');
+            } catch (e) {
+                console.error('VAD initialization failed:', e);
+                vadInstance = null;
+            }
+        }
+
+        // Handle barge-in: user started speaking during playback
+        function handleBargeIn() {
+            console.log('Handling barge-in - stopping playback');
+
+            // 1. Immediately stop audio playback
+            stopAudioPlayback();
+            updateStatus('connected', 'Connected');
+
+            // 2. Tell server to stop generating more audio
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'interrupt' }));
+            }
+        }
+
         // Send message
         function sendMessage() {
             const text = messageInput.value.trim();
@@ -1641,9 +1813,15 @@
         }
 
         async function initPlaybackContext() {
-            if (!playbackContext || playbackContext.state === 'closed') {
-                playbackContext = new AudioContext({ sampleRate: outputSampleRate });
+            // Always create fresh context to prevent old audio from resuming
+            if (playbackContext && playbackContext.state !== 'closed') {
+                playbackContext.close().catch(() => {});
             }
+            playbackContext = new AudioContext({ sampleRate: outputSampleRate });
+            // Create master gain for instant muting
+            masterGain = playbackContext.createGain();
+            masterGain.connect(playbackContext.destination);
+
             if (playbackContext.state === 'suspended') {
                 await playbackContext.resume();
             }
@@ -1666,10 +1844,19 @@
                     const audioBuffer = playbackContext.createBuffer(1, float32.length, outputSampleRate);
                     audioBuffer.getChannelData(0).set(float32);
 
-                    // Schedule playback at precise time (no gaps)
+                    // Schedule playback at precise time (no gaps), connect through masterGain for instant muting
                     const source = playbackContext.createBufferSource();
                     source.buffer = audioBuffer;
-                    source.connect(playbackContext.destination);
+                    source.connect(masterGain || playbackContext.destination);
+
+                    // Track source for barge-in interruption
+                    activeAudioSources.push(source);
+
+                    // Remove from tracking when finished
+                    source.onended = () => {
+                        const idx = activeAudioSources.indexOf(source);
+                        if (idx > -1) activeAudioSources.splice(idx, 1);
+                    };
 
                     // Ensure we don't schedule in the past
                     const startTime = Math.max(nextPlayTime, playbackContext.currentTime);
@@ -1690,6 +1877,7 @@
                 } else if (playbackContext && playbackContext.currentTime >= nextPlayTime - 0.1) {
                     // All audio played
                     isPlaying = false;
+                    isInAudioStream = false;  // Now actually done playing
                     updateStatus('connected', 'Connected');
                 } else {
                     // Still playing, check again
@@ -1701,6 +1889,9 @@
         // Microphone recording - uses AudioWorklet for continuous PCM16 streaming
         async function startRecording() {
             if (isRecording || !ws) return;
+
+            // Always stop any playback when user starts recording
+            stopAudioPlayback();
 
             try {
                 // Request microphone with echo cancellation and noise suppression
@@ -1845,7 +2036,7 @@
                 mediaStream.getTracks().forEach(track => track.stop());
                 mediaStream = null;
             }
-            
+
             if (audioWorklet) {
                 audioWorklet.disconnect();
                 audioWorklet = null;
@@ -1855,8 +2046,9 @@
                 recordContext.close();
                 recordContext = null;
             }
+
         }
-        
+
         function toggleRecording() {
             if (isRecording) stopRecording();
             else startRecording();

@@ -51,6 +51,23 @@ instructions: |
   - content: The author's explanation (keep it concise)
   - source_url: null
 
+  ## Soft Confirmations = Index Recent Context
+  When the author says short confirmations like:
+  - "that's right", "exactly", "yep", "yeah", "correct"
+  - "ok yeah", "yes that's it", "bingo", "spot on"
+  - "mhmm", "uh huh", "right"
+
+  This means they're confirming the most recent information discussed is accurate.
+  **You MUST index what they're confirming** (usually the last thing you or Research said).
+
+  Example flow:
+  1. Research finds: "Team discussed using OrderAPI in Slack last month"
+  2. Author says: "that's right"
+  3. You index: "Team confirmed OrderAPI decision was discussed in Slack - author verified this is accurate"
+  4. You say: "Got it, indexed. What else should I know about that decision?"
+
+  Don't just acknowledge - CAPTURE the confirmed information to the knowledge base.
+
   ## Readiness
   When readiness is high, briefly tell the author they can publish for reviewers.
   

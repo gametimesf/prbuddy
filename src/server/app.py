@@ -455,6 +455,20 @@ async def _handle_text_session(websocket: WebSocket, session):
                     except asyncio.CancelledError:
                         pass
 
+            elif data.get("type") == "interrupt":
+                # User wants to interrupt current agent response (e.g., started talking)
+                if runner._active_task and not runner._active_task.done():
+                    logger.info("user_interrupt", session_id=session.id)
+                    runner._active_task.cancel()
+                    try:
+                        await runner._active_task
+                    except asyncio.CancelledError:
+                        pass
+                    await websocket.send_json({
+                        "type": "interrupted",
+                        "data": {"reason": "user_request"},
+                    })
+
             elif data.get("type") == "end":
                 await runner.end_session()
                 break

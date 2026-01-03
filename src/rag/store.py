@@ -494,30 +494,47 @@ class WeaviatePRRAGStore:
         session_type: str,
     ) -> list[dict[str, str]]:
         """Load conversation history for session resumption.
-        
+
         Args:
             session_type: 'author' or 'reviewer'.
-        
+
         Returns:
             List of {role, content} messages, or empty list if none.
         """
         import json
-        
+        import structlog
+        logger = structlog.get_logger(__name__)
+
         collection = self._get_collection()
-        
+        doc_type = f"conversation_{session_type}"
+
+        logger.debug(
+            "load_conversation_history_query",
+            doc_type=doc_type,
+            tenant=self.tenant_name,
+        )
+
         from weaviate.classes.query import Filter
         response = collection.query.fetch_objects(
-            filters=Filter.by_property("doc_type").equal(f"conversation_{session_type}"),
+            filters=Filter.by_property("doc_type").equal(doc_type),
             limit=1,
         )
-        
+
         if not response.objects:
+            logger.info("load_conversation_history_empty", tenant=self.tenant_name)
             return []
-        
+
         try:
             content = response.objects[0].properties.get("content", "[]")
-            return json.loads(content)
-        except json.JSONDecodeError:
+            history = json.loads(content)
+            logger.info(
+                "load_conversation_history_loaded",
+                tenant=self.tenant_name,
+                message_count=len(history),
+            )
+            return history
+        except json.JSONDecodeError as e:
+            logger.error("load_conversation_history_decode_error", error=str(e))
             return []
     
     async def has_been_researched(self) -> bool:

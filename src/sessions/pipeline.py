@@ -205,6 +205,12 @@ class PipelineSession:
 
     async def _load_history(self) -> None:
         """Load conversation history from RAG store."""
+        logger.debug(
+            "load_history_start",
+            history_loaded=self._history_loaded,
+            has_rag_store=bool(self._rag_store),
+            session_type=self.session_type,
+        )
         if self._history_loaded or not self._rag_store:
             # No RAG store - initialize with PR context only
             if not self._history_loaded and self.pr_context:
@@ -213,10 +219,16 @@ class PipelineSession:
                     "content": generate_pr_context_message(self.pr_context),
                 }]
             self._history_loaded = True
+            logger.debug("load_history_skipped", reason="already_loaded_or_no_rag")
             return
 
         self._history_loaded = True
         history = await self._rag_store.load_conversation_history(self.session_type)
+        logger.info(
+            "load_history_result",
+            loaded_messages=len(history) if history else 0,
+            session_type=self.session_type,
+        )
         if history:
             # Use loaded history (includes PR context from when it was saved)
             self._history = history
