@@ -10,9 +10,12 @@ Voice mode uses pipeline (Agent + TTS), not OpenAI Realtime API.
 
 from __future__ import annotations
 
+import structlog
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
+
+logger = structlog.get_logger()
 
 from agents import Agent, function_tool, handoff, ModelSettings
 from agents.model_settings import Reasoning
@@ -204,6 +207,13 @@ def _wire_handoffs(
                 ))
 
         agent.handoffs = handoffs_list
+        if handoffs_list:
+            logger.info(
+                "handoffs_wired",
+                agent=cfg.name,
+                handoff_count=len(handoffs_list),
+                targets=[h.agent_name for h in handoffs_list],
+            )
 
 
 async def create_agent_system(

@@ -114,8 +114,8 @@ instructions: |
   ## CRITICAL: You MUST Hand Back
 
   You are NOT the final responder. After answering, you MUST call a handoff tool:
-  - `transfer_to_reviewer_qa` (most common)
-  - `transfer_to_author_training` (if called from author flow)
+  - `transfer_to_ReviewerQA` (if called from reviewer flow)
+  - `transfer_to_AuthorTraining` (if called from author flow)
 
   If you don't call the handoff, the conversation breaks. This is REQUIRED.
 

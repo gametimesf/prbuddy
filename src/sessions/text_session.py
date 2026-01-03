@@ -329,60 +329,50 @@ class TextSession:
                         })
 
                         # Emit sources for query_rag results (for UI display)
-                        if tool_name == "query_rag":
-                            # Handle both dict and string output
-                            output = item.output
-                            logger.debug(
-                                "query_rag output debug",
-                                output_type=type(output).__name__,
-                                output_preview=str(output)[:300] if output else "None",
-                            )
-                            if isinstance(output, str):
-                                import json
-                                try:
-                                    output = json.loads(output)
-                                except json.JSONDecodeError:
-                                    logger.warning("Failed to parse query_rag output as JSON")
-                                    output = {}
+                        # Check by output structure (more robust than tool_name matching)
+                        output = item.output
+                        if isinstance(output, str):
+                            import json
+                            try:
+                                output = json.loads(output)
+                            except json.JSONDecodeError:
+                                output = {}
 
-                            if isinstance(output, dict):
-                                results = output.get("results", [])
+                        # Detect query_rag output by structure: has "results" list with "content"/"doc_type"
+                        is_rag_output = (
+                            isinstance(output, dict) and
+                            "results" in output and
+                            isinstance(output.get("results"), list) and
+                            output.get("success") is not False
+                        )
+
+                        if is_rag_output or tool_name == "query_rag":
+                            results = output.get("results", []) if isinstance(output, dict) else []
+                            if results:
                                 logger.info(
                                     "query_rag_citations",
                                     count=len(results),
-                                    doc_types=[r.get("doc_type") for r in results[:5]] if results else [],
+                                    doc_types=[r.get("doc_type") for r in results[:5]],
                                 )
-                                if results:
-                                    # Debug: log first result to see structure
-                                    if results:
-                                        logger.debug(
-                                            "First RAG result structure",
-                                            keys=list(results[0].keys()) if isinstance(results[0], dict) else "not a dict",
-                                            content_len=len(results[0].get("content", "")) if isinstance(results[0], dict) else 0,
-                                        )
-                                    sources = [
-                                        {
-                                            "doc_type": r.get("doc_type", "unknown"),
-                                            "preview": r.get("content", "")[:150] if r.get("content") else "",
-                                            "content": r.get("content", ""),  # Full content for modal
-                                            "source_url": r.get("source"),
-                                            "file_path": r.get("file_path"),
-                                        }
-                                        for r in results[:5]  # Limit to top 5 sources
-                                    ]
-                                    # Log first source to debug content issue
-                                    if sources:
-                                        first_src = sources[0]
-                                        logger.info(
-                                            "sources_used_emit",
-                                            count=len(sources),
-                                            has_content=[bool(s.get("content")) for s in sources],
-                                            first_content_len=len(first_src.get("content", "")),
-                                            first_preview_len=len(first_src.get("preview", "")),
-                                        )
-                                    await self._emit(TextEventType.SOURCES_USED, {
-                                        "sources": sources,
-                                    })
+                                sources = [
+                                    {
+                                        "doc_type": r.get("doc_type", "unknown"),
+                                        "preview": r.get("content", "")[:150] if r.get("content") else "",
+                                        "content": r.get("content", ""),
+                                        "source_url": r.get("source"),
+                                        "file_path": r.get("file_path"),
+                                    }
+                                    for r in results[:5]
+                                ]
+                                if sources:
+                                    logger.info(
+                                        "sources_used_emit",
+                                        count=len(sources),
+                                        has_content=[bool(s.get("content")) for s in sources],
+                                    )
+                                await self._emit(TextEventType.SOURCES_USED, {
+                                    "sources": sources,
+                                })
                     
                     # Handoff initiated
                     elif isinstance(item, HandoffCallItem):
