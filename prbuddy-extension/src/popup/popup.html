@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PR Buddy</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Loading State -->
+    <div id="loading" class="state-panel">
+      <div class="loading-spinner"></div>
+      <p>Detecting PR context...</p>
+    </div>
+
+    <!-- Not on PR Page -->
+    <div id="not-pr-page" class="state-panel" style="display: none;">
+      <div class="state-icon">🔍</div>
+      <h2>Not on a PR Page</h2>
+      <p>Navigate to a GitHub pull request to use PR Buddy.</p>
+      <p class="hint">Example: github.com/owner/repo/pull/123</p>
+    </div>
+
+    <!-- Connection Error -->
+    <div id="connection-error" class="state-panel" style="display: none;">
+      <div class="state-icon">⚠️</div>
+      <h2>Connection Error</h2>
+      <p id="errorMessage">Could not connect to PR Buddy server.</p>
+      <button id="retryBtn" class="btn primary">Retry</button>
+    </div>
+
+    <!-- Mode Selection -->
+    <div id="mode-selection" class="state-panel" style="display: none;">
+      <div class="pr-info">
+        <span class="pr-badge" id="prBadge"></span>
+        <span class="pr-title" id="prTitle"></span>
+      </div>
+      <h2>Select Mode</h2>
+
+      <!-- Input Mode Toggle -->
+      <div class="input-mode-toggle">
+        <button class="input-mode-btn active" data-input="text" id="textModeBtn">
+          <span>💬</span> Text
+        </button>
+        <button class="input-mode-btn" data-input="voice" id="voiceModeBtn">
+          <span>🎤</span> Voice
+        </button>
+      </div>
+
+      <div class="mode-buttons">
+        <button class="mode-btn author" data-mode="author">
+          <span class="mode-icon">✍️</span>
+          <span class="mode-label">Author</span>
+          <span class="mode-desc">Train the AI about your PR changes</span>
+        </button>
+        <button class="mode-btn reviewer" data-mode="reviewer">
+          <span class="mode-icon">🔍</span>
+          <span class="mode-label">Reviewer</span>
+          <span class="mode-desc">Ask questions about this PR</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Chat Interface -->
+    <div id="chat-interface" class="chat-panel" style="display: none;">
+      <header class="chat-header">
+        <div class="header-left">
+          <span class="pr-badge small" id="chatPrBadge"></span>
+          <span class="mode-badge" id="modeBadge"></span>
+        </div>
+        <div class="header-right">
+          <span class="connection-status" id="connectionStatus" title="Connected">●</span>
+          <button id="endSessionBtn" class="icon-btn" title="End session">✕</button>
+        </div>
+      </header>
+
+      <div class="chat-messages" id="chatMessages">
+        <!-- Messages will be inserted here -->
+      </div>
+
+      <!-- Selection Hint -->
+      <div class="selection-hint" id="selectionHint" style="display: none;">
+        <span class="selection-icon">📋</span>
+        <span class="selection-text" id="selectionText"></span>
+        <button class="selection-clear" id="clearSelection">✕</button>
+      </div>
+
+      <!-- Tool Activity Indicator -->
+      <div class="tool-activity" id="toolActivity" style="display: none;">
+        <div class="tool-spinner"></div>
+        <span id="toolName">Searching...</span>
+      </div>
+
+      <!-- Listening indicator -->
+      <div class="listening-indicator" id="listeningIndicator">
+        <span class="listening-dot"></span>
+        <span class="listening-text">Listening...</span>
+        <div class="listening-bars">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div class="chat-input-container">
+        <textarea
+          id="messageInput"
+          placeholder="Type a message... (Shift+Enter for new line)"
+          rows="1"
+        ></textarea>
+        <button id="micBtn" class="mic-btn" title="Voice input">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+          </svg>
+        </button>
+        <button id="sendBtn" class="send-btn" title="Send message">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

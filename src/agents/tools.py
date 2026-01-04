@@ -50,11 +50,13 @@ def register_all_tools() -> None:
     from src.tools.rag_tools import register_rag_tools
     from src.tools.github_tools import register_github_tools
     from src.tools.context_tools import register_context_tools
+    from src.tools.extension_tools import register_extension_tools
 
     # Register all tools
     register_rag_tools()
     register_github_tools()
     register_context_tools()
+    register_extension_tools()
 
 
 def register_mcp_servers() -> None:

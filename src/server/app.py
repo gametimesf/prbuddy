@@ -381,7 +381,21 @@ async def _handle_text_session(websocket: WebSocket, session):
     Agent tasks run as background tasks so they continue even if the client disconnects.
     On reconnect, conversation history is loaded from Weaviate.
     """
+    from ..tools.extension_tools import set_tool_request_callback, resolve_browser_selection, set_stored_selection
+
     runner = session.runner
+
+    # Set up tool request callback for browser extension tools
+    def send_tool_request(request_id: str, tool_name: str, params: dict):
+        """Send tool request to browser extension via WebSocket."""
+        asyncio.create_task(websocket.send_json({
+            "type": "tool_request",
+            "request_id": request_id,
+            "tool": tool_name,
+            "params": params,
+        }))
+
+    set_tool_request_callback(send_tool_request)
 
     # Set up event callback
     async def on_event(event: TextEvent):
@@ -440,6 +454,10 @@ async def _handle_text_session(websocket: WebSocket, session):
 
             if data.get("type") == "message":
                 text = data.get("text", "")
+                # Store selection if provided with message
+                selection = data.get("selection")
+                if selection:
+                    set_stored_selection(selection)
                 if text:
                     # Spawn agent task in background
                     async def run_agent(msg: str):
@@ -469,13 +487,27 @@ async def _handle_text_session(websocket: WebSocket, session):
                         "data": {"reason": "user_request"},
                     })
 
+            elif data.get("type") == "tool_response":
+                # Browser extension responded to a tool request
+                request_id = data.get("request_id")
+                result = data.get("result", {})
+                if request_id:
+                    resolved = resolve_browser_selection(request_id, result)
+                    logger.info(
+                        "tool_response_received",
+                        request_id=request_id,
+                        resolved=resolved,
+                        has_selection=result.get("hasSelection", False),
+                    )
+
             elif data.get("type") == "end":
                 await runner.end_session()
                 break
 
     except WebSocketDisconnect:
-        # Clear callback but DON'T cancel the task - let it finish
+        # Clear callbacks but DON'T cancel the task - let it finish
         runner.set_event_callback(None)
+        set_tool_request_callback(None)
         if runner._active_task and not runner._active_task.done():
             logger.info(
                 "websocket_disconnected_task_continuing",
@@ -494,14 +526,28 @@ async def _handle_pipeline_session(websocket: WebSocket, session):
     """
     import base64
     from ..sessions.pipeline import PipelineEventType
+    from ..tools.extension_tools import set_tool_request_callback, resolve_browser_selection, set_stored_selection
 
     runner = session.runner
+
+    # Set up tool request callback for browser extension tools
+    def send_tool_request(request_id: str, tool_name: str, params: dict):
+        """Send tool request to browser extension via WebSocket."""
+        asyncio.create_task(websocket.send_json({
+            "type": "tool_request",
+            "request_id": request_id,
+            "tool": tool_name,
+            "params": params,
+        }))
+
+    set_tool_request_callback(send_tool_request)
 
     # Get sample rate from tts_config if available
     output_sample_rate = 16000  # Default for Polly
     if hasattr(session.config, 'tts_config') and session.config.tts_config:
         if hasattr(session.config.tts_config, 'sample_rate'):
             output_sample_rate = session.config.tts_config.sample_rate
+    logger.info(f"pipeline_audio_config: tts_config={session.config.tts_config}, output_sample_rate={output_sample_rate}")
 
     # Event handler - translate pipeline events to WebSocket messages
     async def on_event(event) -> None:
@@ -615,6 +661,10 @@ async def _handle_pipeline_session(websocket: WebSocket, session):
 
             elif msg_type == "text" or msg_type == "message":
                 text = data.get("text", "")
+                # Store selection if provided with message
+                selection = data.get("selection")
+                if selection:
+                    set_stored_selection(selection)
                 if text:
                     # Spawn agent task in background
                     async def run_agent(msg: str):
@@ -633,12 +683,40 @@ async def _handle_pipeline_session(websocket: WebSocket, session):
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
 
+            elif msg_type == "tool_response":
+                # Browser extension responded to a tool request
+                request_id = data.get("request_id")
+                result = data.get("result", {})
+                if request_id:
+                    resolved = resolve_browser_selection(request_id, result)
+                    logger.info(
+                        "tool_response_received",
+                        request_id=request_id,
+                        resolved=resolved,
+                        has_selection=result.get("hasSelection", False),
+                    )
+
+            elif msg_type == "interrupt":
+                # User wants to interrupt current agent response
+                if runner._active_task and not runner._active_task.done():
+                    logger.info("user_interrupt", session_id=session.id)
+                    runner._active_task.cancel()
+                    try:
+                        await runner._active_task
+                    except asyncio.CancelledError:
+                        pass
+                    await websocket.send_json({
+                        "type": "interrupted",
+                        "data": {"reason": "user_request"},
+                    })
+
             elif msg_type == "close" or msg_type == "end":
                 break
 
     except WebSocketDisconnect:
-        # Clear callback but DON'T cancel the task - let it finish
+        # Clear callbacks but DON'T cancel the task - let it finish
         runner.set_event_callback(None)
+        set_tool_request_callback(None)
         if runner._active_task and not runner._active_task.done():
             logger.info(
                 "websocket_disconnected_task_continuing",

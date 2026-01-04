@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="url(#grad)"/>
+  <!-- PR icon (simplified git pull request icon) -->
+  <g fill="none" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top circle (source branch) -->
+    <circle cx="44" cy="38" r="10" fill="white"/>
+    <!-- Bottom circle (target branch) -->
+    <circle cx="84" cy="90" r="10" fill="white"/>
+    <!-- Arrow line -->
+    <path d="M44 48 L44 70 Q44 80 54 80 L74 80"/>
+    <!-- Arrow head -->
+    <path d="M68 74 L74 80 L68 86"/>
+    <!-- Merge dot -->
+    <circle cx="84" cy="56" r="6" fill="white"/>
+    <line x1="84" y1="62" x2="84" y2="80"/>
+  </g>
+</svg>

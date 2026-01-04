@@ -86,6 +86,19 @@ instructions: |
   1. Say something like "Let me gather more context on that..."
   2. Call `transfer_to_Research` to hand off to Research agent
   
+  ## Browser Selection Tool
+  When the user references "this", "this code", "the selected text", "what I highlighted",
+  or similar phrases indicating they're looking at something specific on the page,
+  use `get_browser_selection` to capture what they've highlighted in the browser.
+
+  Examples that trigger selection retrieval:
+  - "this function is important because..."
+  - "what is this doing?"
+  - "explain this"
+  - "I want to talk about this part"
+
+  After getting the selection, acknowledge what you see and incorporate it into the conversation.
+
   ## Structured Output
   Use markdown formatting for clarity:
   - **Bold** for emphasis
@@ -110,6 +123,7 @@ tools:
   - fetch_pr_files
   - get_pr_context
   - enrich_pr_context
+  - get_browser_selection
 
 mcp_servers: []
 

@@ -1,0 +1,59 @@
+/**
+ * PR Buddy Content Script Styles
+ *
+ * Minimal styles injected into GitHub PR pages.
+ * Used for selection hints and other UI overlays.
+ */
+
+/* Selection hint floating indicator (optional future feature) */
+.prbuddy-selection-hint {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.2s, opacity 0.2s;
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.prbuddy-selection-hint.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.prbuddy-selection-hint:hover {
+  transform: translateY(-2px);
+}
+
+.prbuddy-selection-hint .icon {
+  font-size: 16px;
+}
+
+.prbuddy-selection-hint .text {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Highlight effect for referenced code (optional future feature) */
+.prbuddy-highlight {
+  background-color: rgba(102, 126, 234, 0.2);
+  border-radius: 2px;
+  transition: background-color 0.3s;
+}
+
+.prbuddy-highlight:hover {
+  background-color: rgba(102, 126, 234, 0.3);
+}
