@@ -1169,8 +1169,13 @@
         // Audio playback
         let playbackContext = null;
         let masterGain = null;  // Gain node for instant muting
-        let audioQueue = [];
+        let audioQueue = [];  // Chunks waiting to be scheduled
         let activeAudioSources = [];  // Track all scheduled BufferSourceNodes for barge-in
+        let scheduledEndTime = 0;  // Track when scheduled audio will end
+        const MIN_BUFFER_CHUNKS = 2;  // Wait for 2 chunks before starting playback
+        const MAX_SCHEDULED_AHEAD = 2;  // Only keep 2 chunks scheduled in Web Audio at a time
+        let scheduledCount = 0;  // How many chunks are currently scheduled in Web Audio
+        let audioStreamEnded = false;  // Track if server signaled end of audio
 
         // Sample rates - set by server in 'ready' event
         let inputSampleRate = 24000;   // For mic/Whisper
@@ -1249,7 +1254,7 @@
         
         // Handle incoming messages
         function handleMessage(data) {
-            console.log('Event:', data.type, data.data);
+            console.log('[EVENT]', data.type, data.data ? JSON.stringify(data.data).substring(0, 100) : '');
             
             switch (data.type) {
                 case 'ready':
@@ -1324,15 +1329,18 @@
                     break;
                     
                 case 'audio_start':
+                    console.log('[AUDIO] Received audio_start from server');
                     handleAudioStart();
                     break;
 
                 case 'audio_end':
+                    console.log('[AUDIO] Received audio_end from server');
                     handleAudioEnd();
                     break;
 
                 case 'audio_chunk':
                     if (data.data && data.data.audio) {
+                        console.log('[AUDIO] Received audio_chunk, size:', data.data.audio.length);
                         playAudio(data.data.audio);
                     }
                     break;
@@ -1340,6 +1348,7 @@
                 case 'audio':
                     // Pipeline mode audio response
                     if (data.audio) {
+                        console.log('[AUDIO] Received audio, size:', data.audio.length);
                         playAudio(data.audio);
                     }
                     break;
@@ -1607,27 +1616,33 @@
             isAgentResponding = false;
         }
 
-        // Interrupt the agent's current response (for voice mode)
-        function interruptAgent() {
-            if (!ws || ws.readyState !== WebSocket.OPEN) return;
-            ws.send(JSON.stringify({ type: 'interrupt' }));
-            removeTypingIndicator();
-            // Stop any playing audio immediately
-            stopAudioPlayback();
-        }
-
         // Fully stop audio playback and reset state
-        function stopAudioPlayback() {
-            console.log('Stopping audio playback - stopping', activeAudioSources.length, 'sources');
+        function stopAudioPlayback(caller = 'unknown') {
+            const droppedChunks = audioQueue.length;
+            console.log(`[AUDIO] stopAudioPlayback called by: ${caller}, scheduled: ${scheduledCount}, queued: ${droppedChunks}, isPlaying: ${isPlaying}`);
 
-            // Instantly mute via gain node (faster than waiting for sources to stop)
-            if (masterGain) {
-                masterGain.gain.setValueAtTime(0, playbackContext?.currentTime || 0);
+            // FIRST: Suspend the context - this immediately pauses all audio processing
+            if (playbackContext && playbackContext.state === 'running') {
+                playbackContext.suspend().then(() => {
+                    console.log('[AUDIO] Context suspended');
+                }).catch(() => {});
             }
 
-            // Stop all scheduled audio sources immediately
+            // Instantly mute via gain node as backup
+            if (masterGain) {
+                try {
+                    const now = playbackContext?.currentTime || 0;
+                    masterGain.gain.cancelScheduledValues(now);
+                    masterGain.gain.setValueAtTime(0, now);
+                    masterGain.disconnect();
+                } catch (e) {}
+            }
+
+            // Stop all scheduled audio sources
             for (const source of activeAudioSources) {
                 try {
+                    source.onended = null;  // Prevent callbacks
+                    source.disconnect();
                     source.stop();
                 } catch (e) {
                     // Source might already be stopped
@@ -1635,9 +1650,17 @@
             }
             activeAudioSources = [];
 
-            isPlaying = false;
-            isInAudioStream = false;  // Reset audio stream state
+            // Clear the queue - this drops all unscheduled chunks
+            if (droppedChunks > 0) {
+                console.log(`[AUDIO] Dropped ${droppedChunks} queued chunks`);
+            }
             audioQueue = [];
+            scheduledCount = 0;
+
+            isPlaying = false;
+            isInAudioStream = false;
+            audioStreamEnded = true;
+            scheduledEndTime = 0;
 
             // Close context to fully stop and release resources
             if (playbackContext && playbackContext.state !== 'closed') {
@@ -1649,7 +1672,7 @@
 
         // Handle audio stream start - reset state and force fresh context
         function handleAudioStart() {
-            console.log('Audio stream starting - resetting playback state');
+            console.log('[AUDIO] handleAudioStart - resetting playback state, stopping', activeAudioSources.length, 'existing sources');
             // Stop any existing scheduled sources
             for (const source of activeAudioSources) {
                 try { source.stop(); } catch (e) {}
@@ -1664,16 +1687,28 @@
                 masterGain = null;
             }
             audioQueue = [];
+            scheduledCount = 0;
             isPlaying = false;
             isInAudioStream = true;  // Track that we're receiving audio (for VAD)
-            nextPlayTime = 0;
+            audioStreamEnded = false;
+            scheduledEndTime = 0;
         }
 
-        // Handle audio stream end
+        // Handle audio stream end - flush remaining buffer
         function handleAudioEnd() {
+            audioStreamEnded = true;
+            console.log(`[AUDIO] handleAudioEnd - queue: ${audioQueue.length}, scheduled: ${scheduledCount}`);
             // NOTE: Don't set isInAudioStream = false here!
             // The audio is still playing on the client. It will be set false
             // when playback actually completes or is stopped.
+
+            // If we have queued audio but haven't started playing, start now
+            if (!isPlaying && audioQueue.length > 0) {
+                startScheduledPlayback();
+            } else if (isPlaying && audioQueue.length > 0 && scheduledCount < MAX_SCHEDULED_AHEAD) {
+                // Schedule remaining chunks
+                scheduleQueuedAudio();
+            }
         }
 
         // Initialize simple VAD for barge-in detection using Web Audio API
@@ -1700,9 +1735,8 @@
                 source.connect(analyser);
 
                 const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                const VAD_THRESHOLD = 20;  // Lower = more sensitive
-                let speechStartTime = 0;
-                const MIN_SPEECH_DURATION = 100;  // ms of speech before triggering (faster response)
+                const VAD_THRESHOLD = 25;  // Audio level threshold
+                let lastBargeInTime = 0;  // Debounce barge-in
 
                 // Check for voice activity periodically
                 function checkVAD() {
@@ -1714,19 +1748,18 @@
                     analyser.getByteFrequencyData(dataArray);
                     const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
 
-                    if (average > VAD_THRESHOLD) {
-                        if (speechStartTime === 0) {
-                            speechStartTime = Date.now();
-                        } else if (Date.now() - speechStartTime > MIN_SPEECH_DURATION) {
-                            // Sustained speech detected
-                            if ((isPlaying || isInAudioStream) && !isRecording) {
-                                console.log('VAD: Speech detected during playback - barge-in!');
+                    // Trigger IMMEDIATELY on any audio above threshold (no duration requirement)
+                    // Only skip if user is actively recording (to avoid interrupting their own input)
+                    if (average > VAD_THRESHOLD && !isRecording) {
+                        const now = Date.now();
+                        // Debounce: only trigger once per 500ms
+                        if (now - lastBargeInTime > 500) {
+                            if (isPlaying || isInAudioStream) {
+                                console.log('VAD: Speech detected during playback - barge-in! (level:', average.toFixed(1), ')');
                                 handleBargeIn();
-                                speechStartTime = 0;  // Reset after triggering
                             }
+                            lastBargeInTime = now;
                         }
-                    } else {
-                        speechStartTime = 0;  // Reset on silence
                     }
 
                     requestAnimationFrame(checkVAD);
@@ -1742,15 +1775,16 @@
         }
 
         // Handle barge-in: user started speaking during playback
-        function handleBargeIn() {
-            console.log('Handling barge-in - stopping playback');
+        function handleBargeIn(reason = 'VAD') {
+            console.log(`[AUDIO] handleBargeIn triggered by: ${reason}`);
 
             // 1. Immediately stop audio playback
-            stopAudioPlayback();
+            stopAudioPlayback('handleBargeIn-' + reason);
             updateStatus('connected', 'Connected');
 
             // 2. Tell server to stop generating more audio
             if (ws && ws.readyState === WebSocket.OPEN) {
+                console.log('[AUDIO] Sending interrupt to server');
                 ws.send(JSON.stringify({ type: 'interrupt' }));
             }
         }
@@ -1786,9 +1820,7 @@
             return div.innerHTML;
         }
         
-        // Audio playback - plays PCM16 chunks from server with seamless scheduling
-        let nextPlayTime = 0;  // Track when next chunk should start
-
+        // Audio playback - plays PCM16 chunks from server using scheduled playback
         async function playAudio(base64Audio) {
             // Skip audio playback in text mode
             if (mode === 'text') return;
@@ -1803,95 +1835,145 @@
             // Queue audio for playback
             audioQueue.push(bytes.buffer);
 
-            if (!isPlaying) {
+            // Start playback once we have enough buffered (or stream ended)
+            if (!isPlaying && (audioQueue.length >= MIN_BUFFER_CHUNKS || audioStreamEnded)) {
+                await startScheduledPlayback();
+            } else if (isPlaying && scheduledCount < MAX_SCHEDULED_AHEAD) {
+                // Already playing but under limit - schedule more
+                scheduleOneChunk();
+            }
+        }
+
+        async function startScheduledPlayback() {
+            if (isPlaying) return;
+
+            try {
+                // Create separate playback AudioContext if needed
+                if (!playbackContext || playbackContext.state === 'closed') {
+                    playbackContext = new AudioContext({ sampleRate: outputSampleRate });
+                    // Create master gain for instant muting
+                    masterGain = playbackContext.createGain();
+                    masterGain.connect(playbackContext.destination);
+                }
+
+                // Ensure gain is at 1 (unmuted)
+                if (masterGain) {
+                    masterGain.gain.value = 1;
+                }
+
+                // Resume if suspended (browser autoplay policy)
+                if (playbackContext.state === 'suspended') {
+                    await playbackContext.resume();
+                }
+
                 isPlaying = true;
                 updateStatus('connected', 'Playing...');
-                await initPlaybackContext();
-                nextPlayTime = playbackContext.currentTime;
-                processAudioQueue();
+
+                // Initialize scheduled time with small delay to allow buffering
+                scheduledEndTime = playbackContext.currentTime + 0.02;
+
+                // Schedule initial chunks
+                scheduleQueuedAudio();
+
+            } catch (error) {
+                console.error('Failed to start playback:', error);
+                isPlaying = false;
             }
         }
 
-        async function initPlaybackContext() {
-            // Always create fresh context to prevent old audio from resuming
-            if (playbackContext && playbackContext.state !== 'closed') {
-                playbackContext.close().catch(() => {});
+        // Schedule ONE chunk from the queue into Web Audio
+        function scheduleOneChunk() {
+            if (audioQueue.length === 0 || !playbackContext || scheduledCount >= MAX_SCHEDULED_AHEAD) {
+                return false;
             }
-            playbackContext = new AudioContext({ sampleRate: outputSampleRate });
-            // Create master gain for instant muting
-            masterGain = playbackContext.createGain();
-            masterGain.connect(playbackContext.destination);
 
-            if (playbackContext.state === 'suspended') {
-                await playbackContext.resume();
-            }
-        }
+            const audioData = audioQueue.shift();
 
-        function processAudioQueue() {
-            // Schedule all queued chunks with precise timing
-            while (audioQueue.length > 0) {
-                const audioData = audioQueue.shift();
+            try {
+                // Convert PCM16 to float32
+                const pcm16 = new Int16Array(audioData);
+                const float32 = new Float32Array(pcm16.length);
+                for (let i = 0; i < pcm16.length; i++) {
+                    float32[i] = pcm16[i] / 32768.0;
+                }
 
-                try {
-                    // Convert PCM16 to float32
-                    const pcm16 = new Int16Array(audioData);
-                    const float32 = new Float32Array(pcm16.length);
-                    for (let i = 0; i < pcm16.length; i++) {
-                        float32[i] = pcm16[i] / 32768.0;
+                // Create audio buffer at the correct sample rate
+                const audioBuffer = playbackContext.createBuffer(1, float32.length, outputSampleRate);
+                audioBuffer.getChannelData(0).set(float32);
+
+                // Create and schedule source (connect through masterGain for instant muting)
+                const source = playbackContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(masterGain || playbackContext.destination);
+
+                // Track source for barge-in interruption
+                activeAudioSources.push(source);
+                scheduledCount++;
+
+                // When this chunk finishes, schedule the next one
+                source.onended = () => {
+                    const idx = activeAudioSources.indexOf(source);
+                    if (idx > -1) activeAudioSources.splice(idx, 1);
+                    scheduledCount--;
+
+                    // Schedule next chunk if available
+                    if (audioQueue.length > 0) {
+                        scheduleOneChunk();
+                    } else if (scheduledCount === 0) {
+                        // All done playing
+                        onPlaybackComplete();
                     }
+                };
 
-                    // Create audio buffer
-                    const audioBuffer = playbackContext.createBuffer(1, float32.length, outputSampleRate);
-                    audioBuffer.getChannelData(0).set(float32);
+                // Schedule to start exactly when the previous chunk ends
+                const startTime = Math.max(scheduledEndTime, playbackContext.currentTime);
+                source.start(startTime);
+                scheduledEndTime = startTime + audioBuffer.duration;
 
-                    // Schedule playback at precise time (no gaps), connect through masterGain for instant muting
-                    const source = playbackContext.createBufferSource();
-                    source.buffer = audioBuffer;
-                    source.connect(masterGain || playbackContext.destination);
+                console.log(`[AUDIO] Scheduled chunk, queue: ${audioQueue.length}, scheduled: ${scheduledCount}`);
+                return true;
 
-                    // Track source for barge-in interruption
-                    activeAudioSources.push(source);
+            } catch (error) {
+                console.error('Error scheduling audio chunk:', error);
+                return false;
+            }
+        }
 
-                    // Remove from tracking when finished
-                    source.onended = () => {
-                        const idx = activeAudioSources.indexOf(source);
-                        if (idx > -1) activeAudioSources.splice(idx, 1);
-                    };
+        // Called when all audio has finished playing
+        function onPlaybackComplete() {
+            if (!isPlaying) return;
+            console.log('[AUDIO] Playback complete');
+            isPlaying = false;
+            updateStatus('connected', 'Connected');
+            // Keep isInAudioStream true for grace period to allow late barge-in
+            setTimeout(() => { isInAudioStream = false; }, 2000);
+        }
 
-                    // Ensure we don't schedule in the past
-                    const startTime = Math.max(nextPlayTime, playbackContext.currentTime);
-                    source.start(startTime);
-
-                    // Update next play time
-                    nextPlayTime = startTime + audioBuffer.duration;
-
-                } catch (error) {
-                    console.error('Playback error:', error);
-                }
+        // Schedule up to MAX_SCHEDULED_AHEAD chunks
+        function scheduleQueuedAudio() {
+            // Schedule chunks up to our limit
+            while (scheduledCount < MAX_SCHEDULED_AHEAD && audioQueue.length > 0) {
+                if (!scheduleOneChunk()) break;
             }
 
-            // Check if more audio arrives
-            setTimeout(() => {
-                if (audioQueue.length > 0) {
-                    processAudioQueue();
-                } else if (playbackContext && playbackContext.currentTime >= nextPlayTime - 0.1) {
-                    // All audio played
-                    isPlaying = false;
-                    isInAudioStream = false;  // Now actually done playing
-                    updateStatus('connected', 'Connected');
-                } else {
-                    // Still playing, check again
-                    setTimeout(arguments.callee, 100);
-                }
-            }, 50);
+            // If stream hasn't ended, check periodically for more chunks
+            if (!audioStreamEnded && audioQueue.length === 0 && scheduledCount > 0) {
+                setTimeout(() => {
+                    if (audioQueue.length > 0 && scheduledCount < MAX_SCHEDULED_AHEAD) {
+                        scheduleQueuedAudio();
+                    }
+                }, 50);
+            }
         }
         
         // Microphone recording - uses AudioWorklet for continuous PCM16 streaming
         async function startRecording() {
+            console.log('[AUDIO] startRecording called, isRecording:', isRecording, 'ws:', ws ? 'connected' : 'null');
             if (isRecording || !ws) return;
 
-            // Always stop any playback when user starts recording
-            stopAudioPlayback();
+            // Always stop any playback AND interrupt server when user starts recording
+            console.log('[AUDIO] User initiated recording - interrupting any ongoing playback');
+            handleBargeIn('mic-button');
 
             try {
                 // Request microphone with echo cancellation and noise suppression
@@ -1965,9 +2047,12 @@
                 await recordContext.audioWorklet.addModule(url);
                 audioWorklet = new AudioWorkletNode(recordContext, 'pcm-processor');
                 
+                // Track audio chunks sent for logging
+                let audioChunksSent = 0;
+
                 audioWorklet.port.onmessage = (e) => {
                     if (!isRecording || !ws || ws.readyState !== WebSocket.OPEN) return;
-                    
+
                     const float32 = e.data.audio;
                     // Convert float32 to int16
                     const pcm16 = new Int16Array(float32.length);
@@ -1975,13 +2060,19 @@
                         const s = Math.max(-1, Math.min(1, float32[i]));
                         pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
                     }
-                    
+
                     // Send to server
                     const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
                     ws.send(JSON.stringify({
                         type: 'audio',
                         audio: base64,
                     }));
+
+                    // Log every 10th chunk to avoid spam
+                    audioChunksSent++;
+                    if (audioChunksSent === 1 || audioChunksSent % 10 === 0) {
+                        console.log(`[AUDIO] Sent audio chunk #${audioChunksSent} to server, size: ${base64.length}`);
+                    }
                 };
                 
                 source.connect(audioWorklet);
@@ -2024,6 +2115,7 @@
         }
 
         function stopRecording() {
+            console.log('[AUDIO] stopRecording called, isRecording:', isRecording);
             if (!isRecording) return;
 
             isRecording = false;
@@ -2050,15 +2142,19 @@
         }
 
         function toggleRecording() {
+            console.log('[AUDIO] toggleRecording called, current isRecording:', isRecording);
             if (isRecording) stopRecording();
             else startRecording();
         }
-        
+
         // Event listeners
         sendBtn.addEventListener('click', sendMessage);
-        
+
         if (micBtn) {
-            micBtn.addEventListener('click', toggleRecording);
+            micBtn.addEventListener('click', () => {
+                console.log('[AUDIO] Mic button clicked');
+                toggleRecording();
+            });
         }
         
         if (voiceBtn) {
