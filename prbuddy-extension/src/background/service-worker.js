@@ -169,8 +169,7 @@ function sendChatMessage(text, selection = null) {
     payload.selection = selection;
   }
   wsManager.send(payload);
-  // Clear cached selection after sending (it's been used)
-  cachedSelection = null;
+  // Keep cached selection for subsequent messages (only cleared when user deselects)
   return { success: true };
 }
 
@@ -189,8 +188,7 @@ function sendSelection(selection) {
     type: 'selection',
     selection,
   });
-  // Clear cached selection
-  cachedSelection = null;
+  // Keep cached selection for subsequent messages
   return { success: true };
 }
 

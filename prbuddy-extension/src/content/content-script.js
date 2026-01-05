@@ -213,13 +213,16 @@ function init() {
 
   console.log('[PR Buddy] Content script fully initialized on PR page');
 
-  // Optional: Track selection changes for potential UI feedback
-  let lastSelection = '';
+  // Track selection changes for UI feedback
+  let lastSelectionText = '';
   document.addEventListener('selectionchange', () => {
     const selection = getBrowserSelection();
-    if (selection.hasSelection && selection.text !== lastSelection) {
-      lastSelection = selection.text;
-      // Notify extension about selection (popup may use this for UI hints)
+    const newText = selection.text || '';
+
+    // Only notify if selection actually changed
+    if (newText !== lastSelectionText) {
+      lastSelectionText = newText;
+      // Notify extension about selection change (including when cleared)
       chrome.runtime.sendMessage({
         type: 'SELECTION_CHANGED',
         selection,

@@ -500,6 +500,9 @@ function handleSelectionChanged(selection) {
   if (selection.hasSelection && selection.text) {
     currentSelection = selection;
     showSelectionHint(selection.text);
+  } else {
+    // Selection was cleared on the page
+    clearSelection();
   }
 }
 
@@ -516,9 +519,8 @@ async function sendMessage() {
   addMessage('user', text);
   showTypingIndicator();
 
-  // Capture selection to send with message (so server has it immediately)
+  // Send current selection with message (keep it for subsequent messages)
   const selectionToSend = currentSelection;
-  clearSelection();
 
   try {
     await chrome.runtime.sendMessage({
@@ -726,14 +728,13 @@ async function startRecording() {
 
     // Send any current selection to server for voice mode
     // This way selection is available when STT completes
+    // Keep selection in memory for subsequent messages
     if (currentSelection && currentSelection.hasSelection) {
       console.log('[Popup] Sending selection for voice mode');
       chrome.runtime.sendMessage({
         type: 'SEND_SELECTION',
         selection: currentSelection,
       }).catch(() => {});
-      // Clear selection after sending (one-time use)
-      clearSelection();
     }
 
   } catch (error) {
