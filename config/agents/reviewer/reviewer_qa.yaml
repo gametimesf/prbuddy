@@ -104,7 +104,20 @@ instructions: |
   1. Briefly acknowledge the question: "Good question, let me research that."
   2. Call the transfer_to_research handoff
   3. Research will find the answer and return control to you
-  4. Once Research hands back, answer the user's question with the new context
+
+  ## CRITICAL: After Research Hands Back
+
+  When Research returns control to you, you MUST:
+  1. Look at the user's ORIGINAL question in the conversation history
+  2. Call query_rag with a query tailored to that specific question
+  3. Use the RAG results to answer the SPECIFIC question asked
+
+  DO NOT just give a generic PR summary. The user asked a specific question - answer THAT.
+
+  Example:
+  - User asked: "Is jazgalindo an SME?"
+  - WRONG: "The PR enables loading purchases using order numbers..." (generic summary)
+  - RIGHT: Query RAG for "jazgalindo SME contributor", then answer about jazgalindo specifically
 
   Do NOT try to answer these questions yourself without the research.
 

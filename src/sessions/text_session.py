@@ -430,6 +430,14 @@ class TextSession:
             # Get final result (must wait for streaming to complete)
             raw_output = result.final_output
 
+            # Log final output for debugging
+            logger.info(
+                "agent_run_complete",
+                last_agent=result.last_agent.name if result.last_agent else "unknown",
+                output_type=type(raw_output).__name__,
+                output_preview=str(raw_output)[:200] if raw_output else "None",
+            )
+
             # Handle structured output vs plain text
             response_text, metadata = self._extract_response_and_metadata(raw_output)
 

@@ -140,16 +140,21 @@ async def _build_agents(
             if cfg.model_settings.reasoning_effort is not None:
                 reasoning = Reasoning(effort=cfg.model_settings.reasoning_effort)
 
+            # Get tool_choice if specified (forces tool calling)
+            tool_choice = getattr(cfg.model_settings, 'tool_choice', None)
+
             # Only create ModelSettings if at least one value is set
             if (cfg.model_settings.temperature is not None or
                 cfg.model_settings.top_p is not None or
                 cfg.model_settings.max_tokens is not None or
-                reasoning is not None):
+                reasoning is not None or
+                tool_choice is not None):
                 model_settings = ModelSettings(
                     temperature=cfg.model_settings.temperature,
                     top_p=cfg.model_settings.top_p,
                     max_tokens=cfg.model_settings.max_tokens,
                     reasoning=reasoning,
+                    tool_choice=tool_choice,
                 )
 
         # Resolve output_type if specified
@@ -179,6 +184,18 @@ async def _build_agents(
 
         agent = Agent(**agent_kwargs)
         agents[cfg.name] = agent
+
+        # Log agent creation with tools and MCP servers
+        tool_names = [getattr(t, '__name__', str(t)) for t in tools]
+        mcp_names = [getattr(s, 'name', str(s)) for s in mcp_servers]
+        logger.info(
+            "agent_created",
+            agent=cfg.name,
+            tool_count=len(tools),
+            tools=tool_names,
+            mcp_server_count=len(mcp_servers),
+            mcp_servers=mcp_names,
+        )
 
     return agents
 
