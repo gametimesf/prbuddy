@@ -220,7 +220,8 @@ class TextSession:
         Returns:
             Agent's response text.
         """
-        await self._emit(TextEventType.USER_MESSAGE, {"text": text})
+        # Note: USER_MESSAGE emission removed - popup displays message immediately
+        # to avoid duplicate display when server echoes it back
         await self._emit(TextEventType.AGENT_THINKING)
         
         # Add user message to history

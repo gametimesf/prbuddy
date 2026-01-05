@@ -14,7 +14,6 @@ export const MSG = {
   SEND_AUDIO: 'SEND_AUDIO',
   GET_SESSION: 'GET_SESSION',
   END_SESSION: 'END_SESSION',
-  TOOL_RESPONSE: 'TOOL_RESPONSE',
   WS_EVENT: 'WS_EVENT',
 
   // Content Script <-> Popup/Service Worker
@@ -31,7 +30,6 @@ export const WS_EVENTS = {
   AGENT_THINKING: 'agent_thinking',
   TOOL_CALL: 'tool_call',
   TOOL_RESULT: 'tool_result',
-  TOOL_REQUEST: 'tool_request',
   TRANSCRIPT: 'transcript',
   AUDIO: 'audio',
   AUDIO_START: 'audio_start',

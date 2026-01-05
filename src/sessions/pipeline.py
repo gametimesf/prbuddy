@@ -141,6 +141,9 @@ class PipelineSession:
 
         # Background task tracking - allows agent to continue if client disconnects
         self._active_task: asyncio.Task | None = None
+
+        # Pending selection to be prepended to next agent input
+        self._pending_selection: dict[str, Any] | None = None
     
     async def _emit(self, event_type: PipelineEventType, data: dict[str, Any] | None = None) -> None:
         """Emit an event. Gracefully handles disconnected clients."""
@@ -161,6 +164,19 @@ class PipelineSession:
     def set_event_callback(self, callback: EventCallback | None) -> None:
         """Set or clear the event callback. Used for WebSocket reconnection."""
         self._on_event = callback
+
+    def set_pending_selection(self, selection: dict[str, Any] | None) -> None:
+        """Set selection to be included with next agent input.
+
+        The selection will be prepended to the transcribed text before
+        sending to the agent.
+
+        Args:
+            selection: Selection data with 'text', 'hasSelection', and 'context'.
+        """
+        self._pending_selection = selection
+        if selection and selection.get("hasSelection"):
+            logger.info("pending_selection_set", text_len=len(selection.get("text", "")))
 
     def _extract_response_and_metadata(self, raw_output: Any) -> tuple[str, dict[str, Any] | None]:
         """Extract displayable text and metadata from agent output.
@@ -389,6 +405,19 @@ class PipelineSession:
         Returns:
             Agent response text.
         """
+        # Get and clear any pending selection
+        selection = self._pending_selection
+        self._pending_selection = None
+
+        # Prepend selection context to message if present
+        if selection and selection.get("hasSelection"):
+            selection_text = selection.get("text", "")
+            context = selection.get("context", {})
+            file_path = context.get("filePath", "")
+            file_info = f" (from {file_path})" if file_path else ""
+            text = f"Current diff selection{file_info}:\n```\n{selection_text}\n```\n\nUser question: {text}"
+            logger.info("selection_prepended_voice", file_path=file_path, selection_len=len(selection_text))
+
         await self._emit(PipelineEventType.AGENT_THINKING)
 
         # Add to history

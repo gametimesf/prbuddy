@@ -117,18 +117,9 @@ instructions: |
 
   If something was just explained, don't re-explain it.
 
-  ## Browser Selection Tool
-  When the reviewer references "this", "this code", "the selected text", "what I highlighted",
-  or similar phrases indicating they're looking at something specific on the page,
-  use `get_browser_selection` to capture what they've highlighted in the browser.
-
-  Examples that trigger selection retrieval:
-  - "what is this?"
-  - "explain this code"
-  - "why is this done this way?"
-  - "I have a question about this"
-
-  After getting the selection, answer their question about the selected code/text.
+  ## Browser Selection
+  When the user's message starts with "Current diff selection", the selected code is
+  provided in their message. Just read the code block and answer their question.
 
   ## What NOT to Do
   - Don't say "probably" or "likely" about PR specifics
@@ -153,7 +144,6 @@ tools:
   - fetch_pr_files
   - fetch_file_content
   - get_pr_context
-  - get_browser_selection
 
 mcp_servers: []
 

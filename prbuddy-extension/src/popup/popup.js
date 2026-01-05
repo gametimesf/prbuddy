@@ -426,13 +426,6 @@ function handleWsEvent(event) {
       hideToolActivity();
       break;
 
-    case 'tool_request':
-      // Service worker handles this, but we can show UI feedback
-      if (event.tool === 'get_browser_selection') {
-        showToolActivity('Getting selection...');
-      }
-      break;
-
     case 'transcript':
       // Show transcribed speech - both user (STT input) and assistant (TTS response)
       console.log('[Popup] Transcript event:', event);
@@ -451,15 +444,8 @@ function handleWsEvent(event) {
       }
       break;
 
-    case 'user_message':
-      // Handle user message echo from server (voice transcription)
-      console.log('[Popup] User message event:', event);
-      if (event.text) {
-        addMessage('user', event.text);
-      } else if (event.data?.text) {
-        addMessage('user', event.data.text);
-      }
-      break;
+    // Note: 'user_message' handler removed - text mode displays message immediately
+    // in sendMessage(), voice mode uses 'transcript' events for user speech
 
     case 'error':
       removeTypingIndicator();
@@ -625,7 +611,6 @@ function formatToolName(toolName) {
   const toolLabels = {
     'query_rag': 'Searching knowledge base...',
     'query_knowledge_base': 'Searching knowledge base...',
-    'get_browser_selection': 'Getting selection...',
     'store_explanation': 'Storing explanation...',
   };
   return toolLabels[toolName] || `Running ${toolName}...`;
@@ -738,6 +723,18 @@ async function startRecording() {
     micBtnEl.classList.add('recording');
     listeningIndicatorEl.classList.add('active');
     console.log('[Popup] Recording started');
+
+    // Send any current selection to server for voice mode
+    // This way selection is available when STT completes
+    if (currentSelection && currentSelection.hasSelection) {
+      console.log('[Popup] Sending selection for voice mode');
+      chrome.runtime.sendMessage({
+        type: 'SEND_SELECTION',
+        selection: currentSelection,
+      }).catch(() => {});
+      // Clear selection after sending (one-time use)
+      clearSelection();
+    }
 
   } catch (error) {
     console.error('[Popup] Recording error:', error);

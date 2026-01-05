@@ -6,7 +6,7 @@
  * - WebSocket connection to backend
  * - Message routing between popup and content scripts
  * - Session management
- * - Tool request handling (e.g., get_browser_selection)
+ * - Audio and selection handling for voice/text modes
  */
 
 import { wsManager } from './ws-manager.js';
@@ -59,9 +59,6 @@ async function handleMessage(message, sender) {
     case 'END_SESSION':
       return endSession();
 
-    case 'TOOL_RESPONSE':
-      return handleToolResponse(message.requestId, message.result);
-
     case 'SELECTION_CHANGED':
       // Cache the selection so we can use it when tool requests it (without re-fetching)
       cachedSelection = message.selection;
@@ -73,6 +70,9 @@ async function handleMessage(message, sender) {
 
     case 'SEND_AUDIO':
       return sendAudioChunk(message.audio);
+
+    case 'SEND_SELECTION':
+      return sendSelection(message.selection);
 
     case 'INTERRUPT':
       return sendInterrupt();
@@ -150,137 +150,6 @@ function setupEventForwarding() {
     }).catch(() => {
       // Popup may not be open - that's fine
     });
-
-    // Handle tool requests that need browser interaction
-    if (data.type === 'tool_request' && data.tool === 'get_browser_selection') {
-      console.log('[SW] Handling browser selection request:', data.request_id);
-      handleBrowserSelectionRequest(data.request_id);
-    }
-  });
-}
-
-/**
- * Handle request for browser selection from backend.
- * @param {string} requestId - Tool request ID.
- */
-async function handleBrowserSelectionRequest(requestId) {
-  try {
-    // Use cached selection if available (captured when user selected text)
-    if (cachedSelection && cachedSelection.hasSelection) {
-      console.log('[SW] Using cached selection:', cachedSelection.text?.substring(0, 50));
-      sendToolResponse(requestId, cachedSelection);
-      cachedSelection = null; // Clear after use
-      return;
-    }
-
-    console.log('[SW] No cached selection, falling back to browser query');
-
-    // Get the active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-    if (!tab) {
-      console.log('[SW] No active tab for selection request');
-      sendToolResponse(requestId, { error: 'No active tab', hasSelection: false });
-      return;
-    }
-
-    // Check if the tab URL is a GitHub PR page
-    if (!tab.url?.match(/github\.com\/[^/]+\/[^/]+\/pull\/\d+/)) {
-      console.log('[SW] Active tab is not a GitHub PR page');
-      sendToolResponse(requestId, { error: 'Not on a GitHub PR page', hasSelection: false });
-      return;
-    }
-
-    console.log('[SW] Requesting selection from tab:', tab.id);
-
-    // Helper function to request selection from content script with fast timeout
-    async function requestSelection(timeoutMs = 2000) {
-      return Promise.race([
-        chrome.tabs.sendMessage(tab.id, {
-          type: 'GET_SELECTION',
-          requestId,
-        }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Content script timeout')), timeoutMs)
-        ),
-      ]);
-    }
-
-    // Helper function to inject and retry
-    async function injectAndRetry() {
-      console.log('[SW] Injecting content script...');
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['src/content/content-script.js'],
-      });
-      // Short wait for initialization
-      await new Promise(resolve => setTimeout(resolve, 50));
-      // Faster timeout after injection since script should be ready
-      return requestSelection(1000);
-    }
-
-    let response;
-    const startTime = Date.now();
-    try {
-      // First attempt with short timeout
-      response = await requestSelection(1500);
-      console.log('[SW] First attempt response:', response, `(${Date.now() - startTime}ms)`);
-
-      // If undefined, content script isn't loaded - try injecting
-      if (response === undefined) {
-        console.log('[SW] No listener found, attempting to inject content script');
-        try {
-          response = await injectAndRetry();
-          console.log('[SW] After injection response:', response, `(${Date.now() - startTime}ms)`);
-        } catch (injectErr) {
-          console.error('[SW] Injection failed:', injectErr.message);
-        }
-      }
-    } catch (err) {
-      console.log('[SW] sendMessage error:', err.message, `(${Date.now() - startTime}ms)`);
-      // Try injection on error too
-      try {
-        response = await injectAndRetry();
-        console.log('[SW] After injection response:', response, `(${Date.now() - startTime}ms)`);
-      } catch (injectErr) {
-        console.error('[SW] Injection also failed:', injectErr.message);
-      }
-    }
-
-    console.log(`[SW] Total selection time: ${Date.now() - startTime}ms`);
-
-    // Final check
-    if (!response) {
-      console.log('[SW] No response after all attempts');
-      sendToolResponse(requestId, {
-        error: 'Content script not responding. Please refresh the GitHub page and try again.',
-        hasSelection: false,
-      });
-      return;
-    }
-
-    if (response.success) {
-      sendToolResponse(requestId, response.result);
-    } else {
-      sendToolResponse(requestId, { error: response.error || 'Failed to get selection', hasSelection: false });
-    }
-  } catch (error) {
-    console.error('[SW] Error getting selection:', error);
-    sendToolResponse(requestId, { error: error.message, hasSelection: false });
-  }
-}
-
-/**
- * Send tool response back to backend.
- * @param {string} requestId - Tool request ID.
- * @param {Object} result - Tool result.
- */
-function sendToolResponse(requestId, result) {
-  console.log('[SW] Sending tool response:', requestId, result);
-  wsManager.send({
-    type: 'tool_response',
-    request_id: requestId,
-    result,
   });
 }
 
@@ -301,6 +170,26 @@ function sendChatMessage(text, selection = null) {
   }
   wsManager.send(payload);
   // Clear cached selection after sending (it's been used)
+  cachedSelection = null;
+  return { success: true };
+}
+
+/**
+ * Send selection to server for voice mode.
+ * Called when user starts recording with a selection active.
+ * @param {Object} selection - Selection data.
+ * @returns {Object} Result.
+ */
+function sendSelection(selection) {
+  if (!selection || !selection.hasSelection) {
+    return { success: true };
+  }
+  console.log('[SW] Sending selection for voice mode:', selection.text?.substring(0, 50));
+  wsManager.send({
+    type: 'selection',
+    selection,
+  });
+  // Clear cached selection
   cachedSelection = null;
   return { success: true };
 }
@@ -375,21 +264,6 @@ async function endSession() {
   currentSession = null;
   await chrome.storage.local.remove('session');
 
-  return { success: true };
-}
-
-/**
- * Handle tool response from popup (if routed through popup).
- * @param {string} requestId - Request ID.
- * @param {Object} result - Tool result.
- * @returns {Object} Result.
- */
-function handleToolResponse(requestId, result) {
-  wsManager.send({
-    type: 'tool_response',
-    request_id: requestId,
-    result,
-  });
   return { success: true };
 }
 
