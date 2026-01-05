@@ -17,6 +17,8 @@ export class WebSocketManager {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.baseUrl = 'ws://localhost:8000';
+    this.pingInterval = null;
+    this.PING_INTERVAL_MS = 15000; // Ping every 15 seconds to keep connection alive
   }
 
   /**
@@ -53,6 +55,7 @@ export class WebSocketManager {
         this.ws.onopen = () => {
           console.log('[WS] Connected to session:', sessionId);
           this.reconnectAttempts = 0;
+          this.startPingInterval();
           this.flushMessageQueue();
           this.emit('connected', { sessionId });
           resolve();
@@ -236,10 +239,35 @@ export class WebSocketManager {
   }
 
   /**
+   * Start ping interval to keep connection alive.
+   * Critical for MV3 service workers which go idle after ~30s.
+   */
+  startPingInterval() {
+    this.stopPingInterval();
+    this.pingInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, this.PING_INTERVAL_MS);
+    console.log('[WS] Ping interval started');
+  }
+
+  /**
+   * Stop ping interval.
+   */
+  stopPingInterval() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+  }
+
+  /**
    * Disconnect WebSocket.
    */
   disconnect() {
     console.log('[WS] Disconnecting');
+    this.stopPingInterval();
     if (this.ws) {
       this.ws.close();
       this.ws = null;

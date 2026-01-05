@@ -485,6 +485,9 @@ async def _handle_text_session(websocket: WebSocket, session):
                 await runner.end_session()
                 break
 
+            elif data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+
     except WebSocketDisconnect:
         # Clear callbacks but DON'T cancel the task - let it finish
         runner.set_event_callback(None)
