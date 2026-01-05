@@ -727,7 +727,5 @@ body {
   opacity: 0.9;
 }
 
-/* Show flow mode button only in voice mode (Author) */
-.chat-panel[data-mode="voice"] .flow-mode-btn {
-  display: flex;
-}
+/* Flow mode button visibility is controlled by JavaScript
+   Only shown for Author mode + Voice mode */

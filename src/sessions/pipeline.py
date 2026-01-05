@@ -94,9 +94,9 @@ class PipelineSession:
     and silence for natural conversation flow.
     """
     
-    # VAD constants (aligned with fan-ops-voice)
+    # VAD constants
     SILENCE_THRESHOLD = 1.5  # seconds of silence before processing
-    ENERGY_THRESHOLD = 800   # RMS threshold for speech detection
+    ENERGY_THRESHOLD = 1500  # RMS threshold for speech detection (higher = less sensitive)
     MIN_AUDIO_LENGTH = 4800  # Minimum bytes (~0.1s at 24kHz 16-bit)
     
     def __init__(

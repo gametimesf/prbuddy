@@ -37,8 +37,9 @@ const MIN_BUFFER_CHUNKS = 2;
 const MAX_SCHEDULED_AHEAD = 2;
 
 // Silence detection config
-const SILENCE_THRESHOLD = 0.01;
-const SILENCE_CHUNKS_BEFORE_SKIP = 5;
+// Higher threshold = less sensitive to background noise (0.01 was too sensitive)
+const SILENCE_THRESHOLD = 0.03;
+const SILENCE_CHUNKS_BEFORE_SKIP = 3;
 let consecutiveSilentChunks = 0;
 
 // DOM elements
