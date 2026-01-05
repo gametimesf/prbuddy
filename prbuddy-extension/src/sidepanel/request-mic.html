@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PR Buddy - Microphone Permission</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      color: #24292f;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 48px;
+      max-width: 480px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+    .icon {
+      font-size: 64px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #24292f;
+    }
+    p {
+      color: #57606a;
+      margin-bottom: 24px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 14px 32px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      margin: 8px;
+    }
+    .btn.primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .btn.primary:hover {
+      opacity: 0.9;
+      transform: translateY(-2px);
+    }
+    .btn.secondary {
+      background: #f6f8fa;
+      color: #57606a;
+      border: 1px solid #d0d7de;
+    }
+    .btn.secondary:hover {
+      background: #e1e4e8;
+    }
+    .status {
+      margin-top: 24px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .status.success {
+      background: #dcffe4;
+      color: #28a745;
+    }
+    .status.error {
+      background: #ffebe9;
+      color: #d73a49;
+    }
+    .status.info {
+      background: #ddf4ff;
+      color: #0366d6;
+    }
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">🎤</div>
+    <h1>Microphone Permission</h1>
+    <p>PR Buddy needs microphone access for voice mode. Click the button below to grant permission.</p>
+
+    <div id="requestSection">
+      <button id="requestBtn" class="btn primary">Grant Microphone Access</button>
+      <br>
+      <button id="skipBtn" class="btn secondary">Skip (Use Text Mode)</button>
+    </div>
+
+    <div id="statusSection" class="hidden">
+      <div id="statusMessage" class="status"></div>
+    </div>
+  </div>
+
+  <script>
+    const requestBtn = document.getElementById('requestBtn');
+    const skipBtn = document.getElementById('skipBtn');
+    const requestSection = document.getElementById('requestSection');
+    const statusSection = document.getElementById('statusSection');
+    const statusMessage = document.getElementById('statusMessage');
+
+    function showStatus(message, type) {
+      requestSection.classList.add('hidden');
+      statusSection.classList.remove('hidden');
+      statusMessage.textContent = message;
+      statusMessage.className = `status ${type}`;
+    }
+
+    async function requestMicPermission() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Permission granted - stop the stream immediately
+        stream.getTracks().forEach(track => track.stop());
+
+        // Store permission state
+        await chrome.storage.local.set({ micPermissionGranted: true });
+
+        showStatus('Microphone access granted! You can close this tab and return to PR Buddy.', 'success');
+
+        // Auto-close after 2 seconds
+        setTimeout(() => {
+          window.close();
+        }, 2000);
+      } catch (error) {
+        console.error('Microphone permission error:', error);
+
+        if (error.name === 'NotAllowedError') {
+          showStatus('Microphone access was denied. You can use text mode, or try again from browser settings.', 'error');
+        } else {
+          showStatus(`Error: ${error.message}. Please try again.`, 'error');
+        }
+      }
+    }
+
+    function skipPermission() {
+      chrome.storage.local.set({ micPermissionSkipped: true });
+      showStatus('Voice mode skipped. You can enable it later from extension settings.', 'info');
+      setTimeout(() => {
+        window.close();
+      }, 1500);
+    }
+
+    requestBtn.addEventListener('click', requestMicPermission);
+    skipBtn.addEventListener('click', skipPermission);
+
+    // Check if permission is already granted
+    navigator.permissions.query({ name: 'microphone' }).then(result => {
+      if (result.state === 'granted') {
+        chrome.storage.local.set({ micPermissionGranted: true });
+        showStatus('Microphone access is already granted! You can close this tab.', 'success');
+        setTimeout(() => {
+          window.close();
+        }, 1500);
+      }
+    }).catch(() => {
+      // permissions.query may not be supported for microphone in all browsers
+    });
+  </script>
+</body>
+</html>

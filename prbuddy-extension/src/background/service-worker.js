@@ -63,6 +63,13 @@ async function handleMessage(message, sender) {
       // Cache the selection so we can use it when tool requests it (without re-fetching)
       cachedSelection = message.selection;
       console.log('[SW] Cached selection:', cachedSelection?.text?.substring(0, 50));
+      // Forward to side panel so it can show the selection hint
+      chrome.runtime.sendMessage({
+        type: 'SELECTION_CHANGED',
+        selection: message.selection,
+      }).catch(() => {
+        // Side panel may not be open - that's fine
+      });
       return { success: true };
 
     case 'GET_CONNECTION_STATE':
@@ -267,6 +274,61 @@ async function endSession() {
 
 // Log when service worker starts
 console.log('[PR Buddy] Service worker initialized');
+
+// ============================================
+// Side Panel Configuration
+// ============================================
+
+// Enable side panel to open when clicking the extension action icon
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+  .catch((error) => console.error('[SW] Error setting panel behavior:', error));
+
+/**
+ * Check if URL is a GitHub PR page.
+ * @param {string} url - URL to check.
+ * @returns {boolean} True if PR page.
+ */
+function isPRPage(url) {
+  return url && /github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(url);
+}
+
+/**
+ * Update side panel availability for a tab.
+ * @param {number} tabId - Tab ID.
+ * @param {string} url - Tab URL.
+ */
+async function updateSidePanelForTab(tabId, url) {
+  const enabled = isPRPage(url);
+  try {
+    await chrome.sidePanel.setOptions({
+      tabId,
+      path: 'src/sidepanel/sidepanel.html',
+      enabled,
+    });
+    console.log(`[SW] Side panel ${enabled ? 'enabled' : 'disabled'} for tab ${tabId}`);
+  } catch (error) {
+    // Tab may have been closed
+    console.log('[SW] Could not update side panel for tab:', error.message);
+  }
+}
+
+// Listen for tab updates to enable/disable side panel based on PR page detection
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    await updateSidePanelForTab(tabId, tab.url);
+  }
+});
+
+// Enable side panel for current tab on extension load/reload
+chrome.tabs.query({ active: true, currentWindow: true }).then(async ([tab]) => {
+  if (tab?.url) {
+    await updateSidePanelForTab(tab.id, tab.url);
+  }
+});
+
+// ============================================
+// Session Restoration
+// ============================================
 
 // Restore session on startup
 chrome.storage.local.get('session').then(({ session }) => {

@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "PR Buddy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "AI-powered PR review assistant - Author training and reviewer Q&A",
 
   "permissions": [
     "activeTab",
     "storage",
     "tabs",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
 
   "host_permissions": [
@@ -31,13 +32,19 @@
   ],
 
   "action": {
-    "default_popup": "src/popup/popup.html",
     "default_title": "PR Buddy"
+  },
+
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
   },
 
   "web_accessible_resources": [
     {
-      "resources": ["src/popup/audio-processor.js"],
+      "resources": [
+        "src/sidepanel/audio-processor.js",
+        "src/sidepanel/request-mic.html"
+      ],
       "matches": ["<all_urls>"]
     }
   ],
