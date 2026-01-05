@@ -10,10 +10,11 @@ from typing import AsyncIterator, Literal
 @dataclass
 class TTSConfig:
     """Configuration for TTS synthesis."""
-    
+
     voice_id: str
     sample_rate: int = 16000  # 16kHz is universally supported
     output_format: Literal["pcm", "mp3", "ogg"] = "pcm"
+    speed: float = 1.0  # Playback speed (0.25 to 4.0 for OpenAI)
 
 
 class TTSProvider(ABC):

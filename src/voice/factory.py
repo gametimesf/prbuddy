@@ -30,12 +30,13 @@ def create_tts(config: TTSVoiceConfig) -> tuple["TTSProvider", "TTSConfig"]:
     if isinstance(config, OpenAITTSConfig):
         from .tts.openai_tts import OpenAITTSProvider
         from .tts.base import TTSConfig
-        
+
         return (
             OpenAITTSProvider(model=config.model),
             TTSConfig(
                 voice_id=config.voice_id,
                 sample_rate=config.sample_rate,
+                speed=config.speed,
             ),
         )
     

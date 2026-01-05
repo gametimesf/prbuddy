@@ -63,6 +63,7 @@ class OpenAITTSProvider(TTSProvider):
             voice=voice,
             input=text,
             response_format="pcm",  # Raw PCM audio
+            speed=config.speed,  # 0.25 to 4.0
         )
         
         # Read all bytes from the response
@@ -90,6 +91,7 @@ class OpenAITTSProvider(TTSProvider):
             voice=voice,
             input=text,
             response_format="pcm",
+            speed=config.speed,  # 0.25 to 4.0
         ) as response:
             async for chunk in response.iter_bytes(chunk_size=4096):
                 if chunk:

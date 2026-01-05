@@ -23,10 +23,11 @@ class PollyVoiceConfig:
 @dataclass
 class OpenAITTSConfig:
     """OpenAI TTS configuration."""
-    
+
     voice_id: str = "alloy"  # alloy, echo, fable, onyx, nova, shimmer
     model: str = "tts-1"  # tts-1 or tts-1-hd
     sample_rate: int = 24000  # OpenAI TTS outputs at 24kHz
+    speed: float = 1.1  # 0.25 to 4.0 (1.25 = 25% faster)
 
 
 @dataclass
