@@ -110,12 +110,26 @@
         </div>
       </div>
 
+      <!-- Flow Mode indicator -->
+      <div class="flow-mode-indicator" id="flowModeIndicator">
+        <span class="flow-dot"></span>
+        <span class="flow-text">Flow Mode - Capturing...</span>
+        <button id="flowEngageBtn" class="flow-engage-btn" title="Ready for questions">
+          Ready
+        </button>
+      </div>
+
       <div class="chat-input-container">
         <textarea
           id="messageInput"
           placeholder="Type a message... (Shift+Enter for new line)"
           rows="1"
         ></textarea>
+        <button id="flowModeBtn" class="flow-mode-btn" title="Toggle Flow Mode (continuous capture)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+          </svg>
+        </button>
         <button id="micBtn" class="mic-btn" title="Voice input">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>

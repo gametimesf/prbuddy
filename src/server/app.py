@@ -676,6 +676,46 @@ async def _handle_pipeline_session(websocket: WebSocket, session):
                         "data": {"reason": "user_request"},
                     })
 
+            elif msg_type == "flow_start":
+                # Enable flow mode for continuous capture
+                logger.info("flow_mode_start_requested", session_id=session.id)
+                await runner.enable_flow_mode()
+                await websocket.send_json({
+                    "type": "flow_mode_started",
+                    "data": {"session_id": session.id},
+                })
+
+            elif msg_type == "flow_stop":
+                # Disable flow mode
+                logger.info("flow_mode_stop_requested", session_id=session.id)
+                await runner.disable_flow_mode()
+                await websocket.send_json({
+                    "type": "flow_mode_ended",
+                    "data": {"session_id": session.id},
+                })
+
+            elif msg_type == "flow_engage":
+                # Trigger engagement in flow mode
+                logger.info("flow_engagement_requested", session_id=session.id)
+                if runner.is_flow_mode:
+                    # Run engagement in background task
+                    async def run_engagement():
+                        try:
+                            await runner.trigger_flow_engagement()
+                        except Exception as e:
+                            logger.error("flow_engagement_failed", error=str(e))
+
+                    runner._active_task = asyncio.create_task(run_engagement())
+                    try:
+                        await runner._active_task
+                    except asyncio.CancelledError:
+                        pass
+                else:
+                    await websocket.send_json({
+                        "type": "error",
+                        "data": {"error": "Flow mode is not active"},
+                    })
+
             elif msg_type == "close" or msg_type == "end":
                 break
 

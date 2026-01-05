@@ -18,6 +18,7 @@ from agents import Agent, Runner
 
 from ..agents.hooks import create_logging_hooks
 from .system_message import generate_pr_context_message
+from .flow_mode import BackgroundProcessor, FlowModePhase
 
 logger = structlog.get_logger(__name__)
 
@@ -58,6 +59,13 @@ class PipelineEventType(str, Enum):
 
     # Structured output metadata (confidence, sources, etc.)
     STRUCTURED_METADATA = "structured_metadata"
+
+    # Flow mode events
+    FLOW_MODE_STARTED = "flow_mode_started"
+    FLOW_MODE_ENDED = "flow_mode_ended"
+    FLOW_ACKNOWLEDGEMENT = "flow_acknowledgement"
+    FLOW_ENGAGEMENT_SIGNAL = "flow_engagement_signal"
+    FLOW_TRANSCRIPT_CHUNK = "flow_transcript_chunk"
 
     # Error
     ERROR = "error"
@@ -144,6 +152,11 @@ class PipelineSession:
 
         # Pending selection to be prepended to next agent input
         self._pending_selection: dict[str, Any] | None = None
+
+        # Flow mode state
+        self._flow_mode_enabled = False
+        self._flow_processor: BackgroundProcessor | None = None
+        self._flow_ack_task: asyncio.Task | None = None
     
     async def _emit(self, event_type: PipelineEventType, data: dict[str, Any] | None = None) -> None:
         """Emit an event. Gracefully handles disconnected clients."""
@@ -177,6 +190,175 @@ class PipelineSession:
         self._pending_selection = selection
         if selection and selection.get("hasSelection"):
             logger.info("pending_selection_set", text_len=len(selection.get("text", "")))
+
+    # =========================================================================
+    # Flow Mode Methods
+    # =========================================================================
+
+    @property
+    def is_flow_mode(self) -> bool:
+        """Check if flow mode is currently enabled."""
+        return self._flow_mode_enabled
+
+    async def enable_flow_mode(self) -> None:
+        """Enable flow mode for continuous capture.
+
+        In flow mode:
+        - Audio is transcribed but agent doesn't respond
+        - System gives short acknowledgements on pauses
+        - Background processor indexes and researches
+        - Engagement triggers full agent response
+        """
+        if self._flow_mode_enabled:
+            return
+
+        # Ensure history is loaded
+        await self._load_history()
+
+        # Create background processor
+        pr_url = self.pr_context.github_url if self.pr_context else ""
+        self._flow_processor = BackgroundProcessor(
+            rag_store=self._rag_store,
+            pr_url=pr_url,
+            on_acknowledgement=self._handle_flow_acknowledgement,
+        )
+
+        await self._flow_processor.start()
+        self._flow_mode_enabled = True
+
+        # Start acknowledgement check loop
+        self._flow_ack_task = asyncio.create_task(self._flow_ack_loop())
+
+        await self._emit(PipelineEventType.FLOW_MODE_STARTED)
+        logger.info("flow_mode_enabled", session_id=self.session_id)
+
+    async def disable_flow_mode(self) -> None:
+        """Disable flow mode and return to normal turn-based mode."""
+        if not self._flow_mode_enabled:
+            return
+
+        # Stop acknowledgement loop
+        if self._flow_ack_task and not self._flow_ack_task.done():
+            self._flow_ack_task.cancel()
+            try:
+                await self._flow_ack_task
+            except asyncio.CancelledError:
+                pass
+        self._flow_ack_task = None
+
+        # Stop background processor
+        if self._flow_processor:
+            await self._flow_processor.stop()
+            self._flow_processor = None
+
+        self._flow_mode_enabled = False
+        await self._emit(PipelineEventType.FLOW_MODE_ENDED)
+        logger.info("flow_mode_disabled", session_id=self.session_id)
+
+    async def trigger_flow_engagement(self) -> str:
+        """Trigger engagement mode in flow mode.
+
+        Called when user clicks "Ready for questions" button or
+        says an engagement keyword.
+
+        Returns:
+            Agent response for engagement.
+        """
+        if not self._flow_mode_enabled or not self._flow_processor:
+            return "Flow mode is not active."
+
+        # Get capture summary
+        summary = await self._flow_processor.transition_to_engagement()
+
+        # Build engagement context
+        transcript = summary["transcript"]
+        if not transcript.strip():
+            return "I didn't catch anything. Could you explain your changes?"
+
+        # Create engagement prompt with captured context
+        engagement_prompt = self._build_engagement_prompt(summary)
+
+        logger.info(
+            "flow_engagement_triggered",
+            transcript_length=len(transcript),
+            questions=len(summary["pending_questions"]),
+        )
+
+        await self._emit(PipelineEventType.FLOW_ENGAGEMENT_SIGNAL, summary)
+
+        # Disable flow mode and run normal agent response
+        await self.disable_flow_mode()
+
+        # Process with agent (will synthesize and stream)
+        self._is_processing = True
+        try:
+            response = await self._run_agent(engagement_prompt)
+            await self._synthesize_and_stream(response)
+            return response
+        finally:
+            self._is_processing = False
+
+    def _build_engagement_prompt(self, summary: dict[str, Any]) -> str:
+        """Build the engagement prompt from flow mode summary.
+
+        Args:
+            summary: Summary from BackgroundProcessor.transition_to_engagement().
+
+        Returns:
+            Prompt string for the agent.
+        """
+        transcript = summary["transcript"]
+        questions = summary.get("pending_questions", [])
+
+        prompt_parts = [
+            "[FLOW MODE CAPTURE COMPLETE]",
+            "",
+            "The author just explained their PR changes. Here's what they said:",
+            "",
+            f'"""{transcript}"""',
+            "",
+        ]
+
+        if questions:
+            prompt_parts.extend([
+                "Questions that came up during their explanation:",
+                "",
+            ])
+            for i, q in enumerate(questions[:3], 1):
+                prompt_parts.append(f"{i}. {q['text']}")
+            prompt_parts.append("")
+
+        prompt_parts.extend([
+            "Please:",
+            "1. Briefly acknowledge what you understood (1-2 sentences)",
+            "2. Ask the most important clarifying question",
+            "3. Index key insights to the knowledge base",
+        ])
+
+        return "\n".join(prompt_parts)
+
+    async def _handle_flow_acknowledgement(self, ack_text: str) -> None:
+        """Handle acknowledgement callback from flow processor.
+
+        Args:
+            ack_text: Acknowledgement text to speak.
+        """
+        await self._emit(PipelineEventType.FLOW_ACKNOWLEDGEMENT, {"text": ack_text})
+
+        # Synthesize the short acknowledgement
+        await self._synthesize_and_stream(ack_text)
+
+    async def _flow_ack_loop(self) -> None:
+        """Background loop to check for pause acknowledgements."""
+        while self._flow_mode_enabled and self._flow_processor:
+            try:
+                await self._flow_processor.check_for_pause_acknowledgement()
+                await asyncio.sleep(0.5)  # Check every 500ms
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("flow_ack_loop_error", error=str(e))
+                await asyncio.sleep(1.0)
 
     def _extract_response_and_metadata(self, raw_output: Any) -> tuple[str, dict[str, Any] | None]:
         """Extract displayable text and metadata from agent output.
@@ -357,39 +539,55 @@ class PipelineSession:
         if not self._audio_buffer:
             self._is_speaking = False
             return
-        
+
         # Check minimum audio length
         total_bytes = sum(len(chunk) for chunk in self._audio_buffer)
         if total_bytes < self.MIN_AUDIO_LENGTH:
             self._audio_buffer.clear()
             self._is_speaking = False
             return
-        
+
         self._is_processing = True
         self._is_speaking = False
         await self._emit(PipelineEventType.PROCESSING_AUDIO)
-        
+
         try:
             # Combine audio buffer
             audio = b"".join(self._audio_buffer)
             self._audio_buffer.clear()
-            
+
             # Transcribe (use 'wav' format to wrap raw PCM for Whisper)
             transcript = await self.stt.transcribe(audio, audio_format="pcm")
-            
+
             if not transcript.strip():
                 self._is_processing = False
                 return
-            
+
             await self._emit(PipelineEventType.TRANSCRIPT, {"text": transcript})
-            
-            # Process with agent
+
+            # Flow mode: feed to processor, check for engagement
+            if self._flow_mode_enabled and self._flow_processor:
+                await self._emit(PipelineEventType.FLOW_TRANSCRIPT_CHUNK, {"text": transcript})
+
+                # Feed transcript to flow processor
+                is_engagement = await self._flow_processor.feed_transcript(transcript)
+
+                if is_engagement:
+                    # User said an engagement keyword - trigger engagement
+                    logger.info("engagement_keyword_detected_in_audio", transcript=transcript[:50])
+                    await self.trigger_flow_engagement()
+
+                # Don't run agent in flow mode - just capture
+                self._is_processing = False
+                return
+
+            # Normal mode: process with agent
             response = await self._run_agent(transcript)
-            
+
             # Synthesize response
             self._is_playing = True
             await self._synthesize_and_stream(response)
-            
+
         except Exception as e:
             await self._emit(PipelineEventType.ERROR, {"error": str(e)})
         finally:

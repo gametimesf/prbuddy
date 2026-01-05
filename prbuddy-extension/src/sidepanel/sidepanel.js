@@ -64,6 +64,12 @@ const micBtnEl = document.getElementById('micBtn');
 const listeningIndicatorEl = document.getElementById('listeningIndicator');
 const requestMicBtnEl = document.getElementById('requestMicBtn');
 const skipMicBtnEl = document.getElementById('skipMicBtn');
+const flowModeIndicatorEl = document.getElementById('flowModeIndicator');
+const flowModeBtnEl = document.getElementById('flowModeBtn');
+const flowEngageBtnEl = document.getElementById('flowEngageBtn');
+
+// Flow mode state
+let isFlowMode = false;
 
 /**
  * Initialize side panel.
@@ -460,6 +466,16 @@ function showChatInterface() {
   clearSelectionEl.onclick = clearSelection;
   micBtnEl.onclick = toggleRecording;
 
+  // Flow mode handlers (only show button in voice mode for author)
+  const isAuthorMode = currentSession.sessionType === 'author';
+  if (flowModeBtnEl && isVoiceMode && isAuthorMode) {
+    flowModeBtnEl.style.display = 'flex';
+    flowModeBtnEl.onclick = toggleFlowMode;
+  }
+  if (flowEngageBtnEl) {
+    flowEngageBtnEl.onclick = triggerFlowEngagement;
+  }
+
   // Message listener is registered in init() - no need to add again
   checkExistingSelection();
   messageInputEl.focus();
@@ -467,22 +483,52 @@ function showChatInterface() {
 
 /**
  * Check for existing text selection on the active tab.
+ * If content script isn't responding, try to inject it.
  */
 async function checkExistingSelection() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) return;
 
-    const response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_SELECTION' });
-    if (response?.success && response.result?.hasSelection) {
-      currentSelection = response.result;
-      showSelectionHint(response.result.text);
-      console.log('[SidePanel] Found existing selection:', response.result.text?.substring(0, 50));
+    // First try to contact existing content script
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_SELECTION' });
+      if (response?.success && response.result?.hasSelection) {
+        currentSelection = response.result;
+        showSelectionHint(response.result.text);
+        console.log('[SidePanel] Found existing selection:', response.result.text?.substring(0, 50));
 
-      chrome.runtime.sendMessage({
-        type: 'SELECTION_CHANGED',
-        selection: response.result,
-      }).catch(() => {});
+        chrome.runtime.sendMessage({
+          type: 'SELECTION_CHANGED',
+          selection: response.result,
+        }).catch(() => {});
+      }
+      return;
+    } catch (error) {
+      // Content script not responding - try to inject it
+      console.log('[SidePanel] Content script not responding, attempting injection...');
+    }
+
+    // Try to inject content script
+    if (tab.url?.includes('github.com') && tab.url?.includes('/pull/')) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['src/content/content-script.js'],
+        });
+        console.log('[SidePanel] Content script injected successfully');
+
+        // Wait a moment for script to initialize, then retry
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_SELECTION' });
+        if (response?.success && response.result?.hasSelection) {
+          currentSelection = response.result;
+          showSelectionHint(response.result.text);
+          console.log('[SidePanel] Found existing selection after injection:', response.result.text?.substring(0, 50));
+        }
+      } catch (injectError) {
+        console.log('[SidePanel] Could not inject content script:', injectError.message);
+      }
     }
   } catch (error) {
     console.log('[SidePanel] Could not check existing selection:', error.message);
@@ -635,6 +681,34 @@ function handleWsEvent(event) {
       }
       break;
 
+    // Flow mode events
+    case 'flow_mode_started':
+      console.log('[SidePanel] Flow mode started');
+      isFlowMode = true;
+      updateFlowModeUI(true);
+      break;
+
+    case 'flow_mode_ended':
+      console.log('[SidePanel] Flow mode ended');
+      isFlowMode = false;
+      updateFlowModeUI(false);
+      break;
+
+    case 'flow_acknowledgement':
+      console.log('[SidePanel] Flow acknowledgement:', event.data?.text);
+      // Acknowledgement audio is handled by audio events
+      break;
+
+    case 'flow_engagement_signal':
+      console.log('[SidePanel] Flow engagement triggered', event.data);
+      // UI will update when flow_mode_ended fires
+      break;
+
+    case 'flow_transcript_chunk':
+      console.log('[SidePanel] Flow transcript:', event.data?.text?.substring(0, 50));
+      // Could show live transcript preview here
+      break;
+
     default:
       console.log('[SidePanel] Unhandled WS event type:', event.type, event);
       break;
@@ -653,6 +727,92 @@ function handleSelectionChanged(selection) {
   } else {
     console.log('[SidePanel] Clearing selection');
     clearSelection();
+  }
+}
+
+// ============================================
+// Flow Mode Functions
+// ============================================
+
+/**
+ * Toggle flow mode on/off.
+ */
+async function toggleFlowMode() {
+  if (isFlowMode) {
+    // Turn off flow mode
+    console.log('[SidePanel] Stopping flow mode');
+    chrome.runtime.sendMessage({
+      type: 'FLOW_STOP',
+    }).catch(err => console.error('[SidePanel] Error stopping flow mode:', err));
+  } else {
+    // Turn on flow mode - must be recording
+    const hasPermission = await checkMicPermission();
+    if (!hasPermission) {
+      showMicPermission();
+      return;
+    }
+
+    console.log('[SidePanel] Starting flow mode');
+
+    // Start recording if not already
+    if (!isRecording) {
+      await startRecording();
+    }
+
+    // Send flow mode start message
+    chrome.runtime.sendMessage({
+      type: 'FLOW_START',
+    }).catch(err => console.error('[SidePanel] Error starting flow mode:', err));
+  }
+}
+
+/**
+ * Trigger engagement in flow mode (ready for questions).
+ */
+function triggerFlowEngagement() {
+  if (!isFlowMode) {
+    console.log('[SidePanel] Not in flow mode, cannot engage');
+    return;
+  }
+
+  console.log('[SidePanel] Triggering flow engagement');
+
+  // Stop recording first
+  if (isRecording) {
+    stopRecording();
+  }
+
+  // Send engagement message
+  chrome.runtime.sendMessage({
+    type: 'FLOW_ENGAGE',
+  }).catch(err => console.error('[SidePanel] Error triggering engagement:', err));
+}
+
+/**
+ * Update flow mode UI state.
+ */
+function updateFlowModeUI(enabled) {
+  if (flowModeIndicatorEl) {
+    if (enabled) {
+      flowModeIndicatorEl.classList.add('active');
+    } else {
+      flowModeIndicatorEl.classList.remove('active');
+    }
+  }
+
+  if (flowModeBtnEl) {
+    if (enabled) {
+      flowModeBtnEl.classList.add('active');
+      flowModeBtnEl.title = 'Exit Flow Mode';
+    } else {
+      flowModeBtnEl.classList.remove('active');
+      flowModeBtnEl.title = 'Enter Flow Mode (continuous capture)';
+    }
+  }
+
+  // Hide/show regular mic button based on flow mode
+  if (micBtnEl) {
+    micBtnEl.style.display = enabled ? 'none' : 'flex';
   }
 }
 

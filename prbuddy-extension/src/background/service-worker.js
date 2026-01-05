@@ -84,6 +84,15 @@ async function handleMessage(message, sender) {
     case 'INTERRUPT':
       return sendInterrupt();
 
+    case 'FLOW_START':
+      return sendFlowStart();
+
+    case 'FLOW_STOP':
+      return sendFlowStop();
+
+    case 'FLOW_ENGAGE':
+      return sendFlowEngage();
+
     default:
       throw new Error(`Unknown message type: ${message.type}`);
   }
@@ -226,6 +235,42 @@ function sendInterrupt() {
   console.log('[SW] Sending interrupt');
   wsManager.send({
     type: 'interrupt',
+  });
+  return { success: true };
+}
+
+/**
+ * Send flow mode start signal to backend.
+ * @returns {Object} Result.
+ */
+function sendFlowStart() {
+  console.log('[SW] Sending flow_start');
+  wsManager.send({
+    type: 'flow_start',
+  });
+  return { success: true };
+}
+
+/**
+ * Send flow mode stop signal to backend.
+ * @returns {Object} Result.
+ */
+function sendFlowStop() {
+  console.log('[SW] Sending flow_stop');
+  wsManager.send({
+    type: 'flow_stop',
+  });
+  return { success: true };
+}
+
+/**
+ * Send flow engagement signal to backend.
+ * @returns {Object} Result.
+ */
+function sendFlowEngage() {
+  console.log('[SW] Sending flow_engage');
+  wsManager.send({
+    type: 'flow_engage',
   });
   return { success: true };
 }
