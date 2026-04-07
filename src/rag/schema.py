@@ -76,7 +76,7 @@ def create_schema(client: weaviate.WeaviateClient) -> None:
             auto_tenant_activation=True,
         ),
         # Use OpenAI for vectorization
-        vectorizer_config=Configure.Vectorizer.text2vec_openai(
+        vector_config=Configure.Vectors.text2vec_openai(
             model="text-embedding-3-small",
         ),
         # Use OpenAI for generative features
