@@ -1,4 +1,4 @@
-.PHONY: setup dev weaviate weaviate-stop test clean help
+.PHONY: setup dev weaviate weaviate-stop test eval clean help
 
 # Default target
 help:
@@ -10,6 +10,7 @@ help:
 	@echo "  weaviate       - Start Weaviate vector database"
 	@echo "  weaviate-stop  - Stop Weaviate"
 	@echo "  test           - Run tests"
+	@echo "  eval           - Run evals (requires Weaviate + OPENAI_API_KEY)"
 	@echo "  clean          - Clean up generated files"
 
 # Setup the development environment
@@ -37,6 +38,10 @@ dev: weaviate
 # Run tests
 test:
 	uv run --extra dev pytest tests/ -v
+
+# Run evals (requires Weaviate + OPENAI_API_KEY)
+eval: weaviate
+	uv run --extra dev pytest evals/ -v -m eval --timeout=120 -s
 
 # Clean up
 clean:
