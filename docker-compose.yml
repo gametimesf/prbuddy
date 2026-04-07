@@ -11,9 +11,8 @@ services:
       DEFAULT_VECTORIZER_MODULE: 'text2vec-openai'
       ENABLE_MODULES: 'text2vec-openai,generative-openai'
       OPENAI_APIKEY: ${OPENAI_API_KEY}
-      # Disable clustering for single-node local development
-      CLUSTER_GOSSIP_BIND_PORT: '0'
-      CLUSTER_DATA_BIND_PORT: '0'
+      # Single-node RAFT bootstrap (required for Weaviate 1.25+)
+      RAFT_BOOTSTRAP_EXPECT: 1
     volumes:
       - weaviate_data:/var/lib/weaviate
     healthcheck:
