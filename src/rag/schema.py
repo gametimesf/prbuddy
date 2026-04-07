@@ -168,3 +168,4 @@ def list_tenants(client: weaviate.WeaviateClient) -> list[str]:
     tenants = collection.tenants.get()
     return [t.name for t in tenants.values()]
 
+

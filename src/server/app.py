@@ -65,13 +65,15 @@ async def lifespan(app: FastAPI):
     init_registries()
     
     # Connect to Weaviate
-    weaviate_url = os.environ.get("WEAVIATE_URL", "http://localhost:8080")
+    weaviate_url = os.environ.get("WEAVIATE_URL", "http://localhost:8085")
     logger.info("Connecting to Weaviate", url=weaviate_url)
     
+    weaviate_grpc_port = int(os.environ.get("WEAVIATE_GRPC_PORT", "50052"))
     try:
         _weaviate_client = weaviate.connect_to_local(
             host=weaviate_url.replace("http://", "").replace("https://", "").split(":")[0],
-            port=int(weaviate_url.split(":")[-1]) if ":" in weaviate_url.split("//")[-1] else 8080,
+            port=int(weaviate_url.split(":")[-1]) if ":" in weaviate_url.split("//")[-1] else 8085,
+            grpc_port=weaviate_grpc_port,
         )
         
         # Create schema

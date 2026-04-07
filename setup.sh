@@ -73,3 +73,4 @@ echo "  1. Edit .env and add your OPENAI_API_KEY"
 echo "  2. Run 'make weaviate' to start the vector database"
 echo "  3. Run 'make dev' to start the development server"
 
+

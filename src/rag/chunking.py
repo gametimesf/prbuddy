@@ -232,3 +232,4 @@ def _split_content(content: str, max_size: int) -> Iterator[str]:
     if current_chunk:
         yield "\n".join(current_chunk)
 
+

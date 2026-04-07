@@ -196,3 +196,4 @@ class TestToolRegistry:
         
         assert ToolRegistry.is_registered("my_tool") is True
 
+

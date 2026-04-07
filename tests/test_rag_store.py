@@ -138,3 +138,4 @@ class TestRAGResult:
         assert result.chunk_index is None
         assert result.score == 0.0
 
+

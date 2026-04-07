@@ -162,3 +162,4 @@ class PollyTTSProvider(TTSProvider):
         }
         return locale_voices.get(locale, "Joanna")
 
+

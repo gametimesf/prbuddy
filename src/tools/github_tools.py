@@ -320,3 +320,4 @@ def register_github_tools() -> None:
     ToolRegistry.register("fetch_pr_files", fetch_pr_files_impl)
     ToolRegistry.register("fetch_file_content", fetch_file_content_impl)
 
+
