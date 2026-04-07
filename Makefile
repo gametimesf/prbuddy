@@ -21,7 +21,7 @@ weaviate:
 	@echo "Starting Weaviate..."
 	docker-compose up -d weaviate
 	@echo "Waiting for Weaviate to be ready..."
-	@until curl -sf http://localhost:8080/v1/.well-known/ready > /dev/null 2>&1; do \
+	@until curl -sf http://localhost:8085/v1/.well-known/ready > /dev/null 2>&1; do \
 		sleep 1; \
 	done
 	@echo "Weaviate is ready!"
@@ -36,7 +36,7 @@ dev: weaviate
 
 # Run tests
 test:
-	uv run pytest tests/ -v
+	uv run --extra dev pytest tests/ -v
 
 # Clean up
 clean:
