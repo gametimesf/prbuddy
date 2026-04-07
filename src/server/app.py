@@ -69,24 +69,30 @@ async def lifespan(app: FastAPI):
     logger.info("Connecting to Weaviate", url=weaviate_url)
     
     weaviate_grpc_port = int(os.environ.get("WEAVIATE_GRPC_PORT", "50052"))
-    try:
-        _weaviate_client = weaviate.connect_to_local(
-            host=weaviate_url.replace("http://", "").replace("https://", "").split(":")[0],
-            port=int(weaviate_url.split(":")[-1]) if ":" in weaviate_url.split("//")[-1] else 8085,
-            grpc_port=weaviate_grpc_port,
-        )
-        
-        # Create schema
-        create_schema(_weaviate_client)
-        
-        # Initialize session manager
-        _session_manager = PRSessionManager(_weaviate_client)
-        
-        logger.info("PR Buddy server started")
-        
-    except Exception as e:
-        logger.error("Failed to connect to Weaviate", error=str(e))
-        raise
+    max_retries = 10
+    for attempt in range(1, max_retries + 1):
+        try:
+            _weaviate_client = weaviate.connect_to_local(
+                host=weaviate_url.replace("http://", "").replace("https://", "").split(":")[0],
+                port=int(weaviate_url.split(":")[-1]) if ":" in weaviate_url.split("//")[-1] else 8085,
+                grpc_port=weaviate_grpc_port,
+            )
+
+            # Create schema
+            create_schema(_weaviate_client)
+
+            # Initialize session manager
+            _session_manager = PRSessionManager(_weaviate_client)
+
+            logger.info("PR Buddy server started")
+            break
+
+        except Exception as e:
+            if attempt == max_retries:
+                logger.error("Failed to connect to Weaviate after retries", error=str(e))
+                raise
+            logger.warning("Weaviate not ready, retrying", attempt=attempt, error=str(e))
+            await asyncio.sleep(2)
     
     yield
     
