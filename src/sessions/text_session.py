@@ -226,12 +226,27 @@ class TextSession:
         
         # Add user message to history
         self._history.append({"role": "user", "content": text})
-        
+
         try:
+            # Build agent input — inject RAG context for reviewer sessions
+            run_input = self._history
+            if self.session_type == "reviewer" and self._rag_store:
+                from .context_injection import build_rag_context
+                rag_context = await build_rag_context(text, self._rag_store)
+                if rag_context:
+                    # Inject into a copy so RAG context is ephemeral (not in persistent history)
+                    run_input = self._history.copy()
+                    run_input.insert(-1, {"role": "system", "content": rag_context})
+                    logger.info("rag_context_injected", question=text[:80], result_count=rag_context.count("\n["))
+                    await self._emit(TextEventType.KB_QUERIED, {
+                        "tool": "auto_context_injection",
+                        "agent": self._current_agent.name,
+                    })
+
             # Run the agent with streaming to capture tool calls and handoffs
             result: RunResultStreaming = Runner.run_streamed(
                 self._current_agent,
-                input=self._history,
+                input=run_input,
             )
             
             response_text = ""

@@ -644,12 +644,22 @@ class PipelineSession:
 
         hooks = create_logging_hooks(on_event=emit_hook_event)
 
+        # Build agent input — inject RAG context for reviewer sessions
+        run_input = self._history
+        if self.session_type == "reviewer" and self._rag_store:
+            from .context_injection import build_rag_context
+            rag_context = await build_rag_context(text, self._rag_store)
+            if rag_context:
+                run_input = self._history.copy()
+                run_input.insert(-1, {"role": "system", "content": rag_context})
+                logger.info("rag_context_injected", question=text[:80])
+
         # Run agent with timeout to prevent hanging
         try:
             result = await asyncio.wait_for(
                 Runner.run(
                     self._current_agent,
-                    input=self._history,
+                    input=run_input,
                     hooks=hooks,
                 ),
                 timeout=120.0,  # 2 minute timeout

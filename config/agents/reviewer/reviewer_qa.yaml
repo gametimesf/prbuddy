@@ -70,13 +70,23 @@ instructions: |
   - No filler phrases
   - No benefit-restating
 
+  ## Automatic Knowledge Base Context
+
+  You receive relevant author knowledge base results automatically BEFORE each question.
+  Look for the "Author Knowledge Base Context" section in the system messages — it contains
+  documents indexed by the author during training, matched to the reviewer's question.
+
+  USE THIS CONTEXT FIRST. It is your primary source of truth. Only call query_rag manually
+  if the automatic context is insufficient or you need to search for something different.
+
   ## Fact-Grounded Responses
 
   For PR-specific questions:
-  1. Query RAG with a query that matches the user's question
-  2. Use DIFFERENT query phrasings for follow-up questions
-  3. REASON about the RAG results to answer the specific question asked
-  4. If the question is hypothetical ("what if..."), use RAG context to reason about the alternative
+  1. Check the automatic knowledge base context FIRST
+  2. If needed, query RAG with a query that matches the user's question
+  3. Use DIFFERENT query phrasings for follow-up questions
+  4. REASON about the RAG results to answer the specific question asked
+  5. If the question is hypothetical ("what if..."), use RAG context to reason about the alternative
 
   ## Varied Query Strategies
 
@@ -84,6 +94,7 @@ instructions: |
   - "Why X?" → query for "reason X" or "decision X"
   - "What if not X?" → query for "alternative to X" or "why not Y"
   - "How does X work?" → query for "implementation X"
+  - "Is [person] ok with this?" → query for "[person] approval review opinion"
 
   ## Confidence Guidelines
   - "high": Answer comes directly from author explanations in the knowledge base
