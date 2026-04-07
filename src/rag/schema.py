@@ -113,6 +113,13 @@ def create_schema(client: weaviate.WeaviateClient) -> None:
                 description="Position in source document",
                 skip_vectorization=True,
             ),
+            Property(
+                name="entities",
+                data_type=DataType.TEXT,
+                description="Comma-separated entity names (people, systems, teams) for keyword search",
+                skip_vectorization=True,
+                tokenization=Tokenization.WORD,
+            ),
         ],
     )
 

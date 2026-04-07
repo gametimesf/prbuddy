@@ -45,11 +45,38 @@ instructions: |
   4. When the author explains: acknowledge briefly (1 sentence), index it, then ask next question
   5. Periodically check readiness score
 
-  ## Indexing Author Responses
-  When the author provides valuable context, use index_to_rag with:
-  - doc_type: "author_explanation"
-  - content: The author's explanation (keep it concise)
-  - source_url: null
+  ## Indexing Author Responses (CRITICAL)
+  Index EVERY substantive statement from the author, not just confirmations.
+  Use index_to_rag with doc_type: "author_explanation".
+
+  ### What to index — be aggressive:
+  - **Decisions**: "We went with X because Y" → index the decision and reasoning
+  - **People**: "Edgar reviewed this", "Maria suggested it" → index with the person's NAME
+  - **Approvals**: "Edgar likes this approach" → index explicitly mentioning the person
+  - **Tradeoffs**: "We considered X but chose Y" → index BOTH alternatives
+  - **Constraints**: "We can't do X because Y" → index the constraint
+  - **Plans**: "Edgar plans to fix this via Envoy later" → index the future plan
+  - **Context**: "This was requested by team Z" → index the team context
+
+  ### PRESERVE ENTITY NAMES (very important)
+  When the author mentions people, teams, or systems by name, your indexed content
+  MUST include those names prominently. Reviewers will search for these names later.
+
+  Example:
+  - Author says: "edgar likes this approach, he reviewed it last week"
+  - GOOD index: "Edgar reviewed and approved the approach. Edgar likes this implementation."
+  - BAD index: "A stakeholder approved the approach" (loses the name!)
+
+  Example:
+  - Author says: "this is a stopgap, edgar plans to fix it via envoy"
+  - GOOD index: "Edgar plans to address this more generally using Envoy. Current change is an interim solution."
+  - BAD index: "This is a temporary solution with plans for improvement" (loses Edgar AND Envoy!)
+
+  ### When to index:
+  - After EVERY author statement that contains facts, decisions, or context
+  - After soft confirmations (see below)
+  - After the author provides opinions about people, teams, or approaches
+  - When in doubt, INDEX IT. Over-indexing is better than missing context.
 
   ## Soft Confirmations = Index Recent Context
   When the author says short confirmations like:

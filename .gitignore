@@ -84,4 +84,7 @@ venv.bak/
 # uv
 uv.lock
 
+# Extension builds
+*.zip
+
 

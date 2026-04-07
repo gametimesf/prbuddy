@@ -93,12 +93,13 @@ async def index_to_rag_impl(
     doc_type: str,
     source_url: str | None = None,
     file_path: str | None = None,
+    entities: str | None = None,
 ) -> dict[str, Any]:
     """Add a document to the PR knowledge base.
-    
+
     Use this to index new context like author explanations,
     code snippets, or external documentation.
-    
+
     Args:
         content: The text content to index.
         doc_type: Type of document. Common types:
@@ -110,7 +111,10 @@ async def index_to_rag_impl(
             - "comment": PR comments
         source_url: Optional URL to the source.
         file_path: Optional file path for code-related content.
-    
+        entities: Optional comma-separated entity names (people, systems, teams)
+            mentioned in the content. Improves keyword search recall.
+            Example: "Edgar, Envoy, fan-ops-voice"
+
     Returns:
         Dict with success status and document ID.
     """
@@ -121,19 +125,20 @@ async def index_to_rag_impl(
             "success": False,
             "error": "RAG store not initialized. PR context may not be set.",
         }
-    
+
     if not content.strip():
         return {
             "success": False,
             "error": "Content cannot be empty.",
         }
-    
+
     try:
         doc_id = await store.add_document(
             doc_type=doc_type,
             content=content,
             file_path=file_path,
             source_url=source_url,
+            entities=entities,
         )
         
         return {

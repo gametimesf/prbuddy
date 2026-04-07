@@ -102,34 +102,38 @@ class WeaviatePRRAGStore:
         file_path: str | None = None,
         source_url: str | None = None,
         chunk_index: int | None = None,
+        entities: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
         """Add a document to the knowledge base.
-        
+
         Args:
             doc_type: Document type (diff, description, author_explanation, etc.)
             content: The text content to index.
             file_path: Optional file path for code chunks.
             source_url: Optional URL to the source.
             chunk_index: Optional position in the source.
+            entities: Optional comma-separated entity names for keyword search.
             metadata: Optional additional metadata.
-        
+
         Returns:
             The document ID.
         """
         collection = self._get_collection()
-        
+
         properties = {
             "content": content,
             "doc_type": doc_type,
         }
-        
+
         if file_path:
             properties["file_path"] = file_path
         if source_url:
             properties["source_url"] = source_url
         if chunk_index is not None:
             properties["chunk_index"] = chunk_index
+        if entities:
+            properties["entities"] = entities
         
         # Add any additional metadata fields
         if metadata:
@@ -164,7 +168,7 @@ class WeaviatePRRAGStore:
                     "doc_type": doc["doc_type"],
                 }
                 
-                for key in ["file_path", "source_url", "chunk_index"]:
+                for key in ["file_path", "source_url", "chunk_index", "entities"]:
                     if key in doc and doc[key] is not None:
                         properties[key] = doc[key]
                 
