@@ -22,12 +22,13 @@ sequenceDiagram
     PRBuddy->>Weaviate: Index author_explanation<br/>(preserves entity names)
     PRBuddy-->>Author: Got it - Edgar approves<br/>the explicit access approach.
 
-    Note over Author,Unblocked: Research (when needed)
-    Author->>PRBuddy: "What did the team discuss?"
-    PRBuddy->>Unblocked: Search team context,<br/>Slack, historical decisions
-    Unblocked-->>PRBuddy: Relevant discussions
-    PRBuddy->>Weaviate: Index findings
-    PRBuddy-->>Author: Team discussed via Envoy...
+    opt Research (team context, history, Slack)
+        Author->>PRBuddy: "What did the team discuss?"
+        PRBuddy->>Unblocked: Search team context,<br/>Slack, historical decisions
+        Unblocked-->>PRBuddy: Relevant discussions
+        PRBuddy->>Weaviate: Index findings
+        PRBuddy-->>Author: Team discussed via Envoy...
+    end
 ```
 
 ```mermaid
@@ -35,6 +36,7 @@ sequenceDiagram
     participant Reviewer
     participant PRBuddy as PR Buddy
     participant Weaviate as Knowledge Base<br/>(Weaviate)
+    participant Unblocked
 
     Note over Reviewer,Weaviate: Reviewer Q&A (auto-injection)
     Reviewer->>PRBuddy: "Is Edgar ok with this?"
@@ -42,6 +44,14 @@ sequenceDiagram
     Weaviate-->>PRBuddy: Matching docs<br/>(author explanations, diff, etc.)
     Note over PRBuddy: Deduplicate, rank,<br/>inject as system context
     PRBuddy-->>Reviewer: Edgar reviewed and approves.<br/>He likes the explicit single-service access.
+
+    opt Research (when KB lacks context)
+        Reviewer->>PRBuddy: "How long has this been requested?"
+        PRBuddy->>Unblocked: Search Slack, Jira,<br/>historical PRs
+        Unblocked-->>PRBuddy: Timeline + discussions
+        PRBuddy->>Weaviate: Index findings
+        PRBuddy-->>Reviewer: Requested for ~6 months,<br/>tracked in INFRA-432.
+    end
 ```
 
 ## Architecture
