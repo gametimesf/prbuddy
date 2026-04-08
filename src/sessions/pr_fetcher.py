@@ -54,6 +54,9 @@ async def fetch_and_populate_context(
     # Persist to Weaviate
     await repo.save(context)
 
+    # Auto-index diff and description so agents start with full context
+    await _auto_index_pr_content(context, rag_store)
+
     return context
 
 
@@ -92,6 +95,72 @@ async def _fetch_pr_metadata(context: PRContext) -> PRContext:
         context.fetched_at = datetime.now(timezone.utc).isoformat()
 
     return context
+
+
+async def _auto_index_pr_content(context: PRContext, rag_store: "WeaviatePRRAGStore") -> None:
+    """Auto-fetch and index PR diff, description, and comments into RAG.
+
+    Called during session creation so agents start with full context
+    in the knowledge base without needing to call tools themselves.
+    """
+    import structlog
+    logger = structlog.get_logger(__name__)
+
+    from ..tools.github_tools import fetch_pr_diff_impl, fetch_pr_comments_impl
+
+    # Index description if available
+    if context.description:
+        await rag_store.add_document(
+            doc_type="description",
+            content=f"PR #{context.number}: {context.title}\n\n{context.description}",
+            source_url=context.github_url,
+        )
+        logger.info("auto_indexed_description", pr=context.pr_id)
+
+    # Fetch and index diff
+    try:
+        diff_result = await fetch_pr_diff_impl(
+            owner=context.owner,
+            repo=context.repo,
+            pr_number=context.number,
+        )
+        if diff_result.get("success") and diff_result.get("diff"):
+            from ..rag.chunking import chunk_diff
+            chunks = list(chunk_diff(diff_result["diff"]))
+            for chunk in chunks:
+                await rag_store.add_document(
+                    doc_type="diff",
+                    content=chunk.content,
+                    file_path=chunk.metadata.get("file_path"),
+                    source_url=context.github_url,
+                )
+            logger.info("auto_indexed_diff", pr=context.pr_id, chunks=len(chunks))
+    except Exception as e:
+        logger.warning("auto_index_diff_failed", error=str(e))
+
+    # Fetch and index comments
+    try:
+        comments_result = await fetch_pr_comments_impl(
+            owner=context.owner,
+            repo=context.repo,
+            pr_number=context.number,
+        )
+        if comments_result.get("success"):
+            for comment in comments_result.get("comments", []):
+                body = comment.get("body", "").strip()
+                if body and len(body) > 10:
+                    author = comment.get("author", "unknown")
+                    await rag_store.add_document(
+                        doc_type="comment",
+                        content=f"{author}: {body}",
+                        source_url=context.github_url,
+                        entities=author,
+                    )
+            comment_count = len(comments_result.get("comments", []))
+            if comment_count:
+                logger.info("auto_indexed_comments", pr=context.pr_id, count=comment_count)
+    except Exception as e:
+        logger.warning("auto_index_comments_failed", error=str(e))
 
 
 async def refresh_pr_context(rag_store: "WeaviatePRRAGStore") -> PRContext | None:
