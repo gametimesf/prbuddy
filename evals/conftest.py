@@ -11,6 +11,9 @@ import asyncio
 
 import pytest
 import weaviate
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from src.agents.factory import create_author_system, create_reviewer_system
 from src.agents.tools import init_registries
