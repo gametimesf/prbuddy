@@ -131,15 +131,16 @@
         // Permission granted - stop the stream immediately
         stream.getTracks().forEach(track => track.stop());
 
-        // Store permission state
+        // Store permission state and notify sidepanel
         await chrome.storage.local.set({ micPermissionGranted: true });
+        chrome.runtime.sendMessage({ type: 'MIC_PERMISSION_GRANTED' }).catch(() => {});
 
-        showStatus('Microphone access granted! You can close this tab and return to PR Buddy.', 'success');
+        showStatus('Microphone access granted! Returning to PR Buddy...', 'success');
 
-        // Auto-close after 2 seconds
+        // Auto-close after 1.5 seconds
         setTimeout(() => {
           window.close();
-        }, 2000);
+        }, 1500);
       } catch (error) {
         console.error('Microphone permission error:', error);
 
@@ -153,6 +154,7 @@
 
     function skipPermission() {
       chrome.storage.local.set({ micPermissionSkipped: true });
+      chrome.runtime.sendMessage({ type: 'MIC_PERMISSION_SKIPPED' }).catch(() => {});
       showStatus('Voice mode skipped. You can enable it later from extension settings.', 'info');
       setTimeout(() => {
         window.close();
@@ -166,7 +168,8 @@
     navigator.permissions.query({ name: 'microphone' }).then(result => {
       if (result.state === 'granted') {
         chrome.storage.local.set({ micPermissionGranted: true });
-        showStatus('Microphone access is already granted! You can close this tab.', 'success');
+        chrome.runtime.sendMessage({ type: 'MIC_PERMISSION_GRANTED' }).catch(() => {});
+        showStatus('Microphone access is already granted! Returning to PR Buddy...', 'success');
         setTimeout(() => {
           window.close();
         }, 1500);

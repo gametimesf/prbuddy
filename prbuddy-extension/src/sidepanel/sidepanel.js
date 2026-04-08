@@ -81,6 +81,23 @@ async function init() {
   // Register message listener early so we can receive selection changes
   chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
+  // Listen for mic permission changes (fallback if runtime message doesn't arrive)
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+    const micPermEl = document.getElementById('mic-permission');
+    if (!micPermEl || micPermEl.style.display === 'none') return;
+
+    if (changes.micPermissionGranted?.newValue === true) {
+      console.log('[SidePanel] Mic permission detected via storage change');
+      selectedInputMode = 'voice';
+      showModeSelection();
+    } else if (changes.micPermissionSkipped?.newValue === true) {
+      console.log('[SidePanel] Mic skip detected via storage change');
+      selectedInputMode = 'text';
+      showModeSelection();
+    }
+  });
+
   // Check for existing session first
   try {
     const sessionResponse = await chrome.runtime.sendMessage({ type: 'GET_SESSION' });
@@ -564,6 +581,14 @@ function handleRuntimeMessage(message, sender, sendResponse) {
   } else if (message.type === 'SELECTION_CHANGED') {
     console.log('[SidePanel] Selection changed:', message.selection?.text?.substring(0, 50));
     handleSelectionChanged(message.selection);
+  } else if (message.type === 'MIC_PERMISSION_GRANTED') {
+    console.log('[SidePanel] Mic permission granted via permission page');
+    selectedInputMode = 'voice';
+    showModeSelection();
+  } else if (message.type === 'MIC_PERMISSION_SKIPPED') {
+    console.log('[SidePanel] Mic permission skipped');
+    selectedInputMode = 'text';
+    showModeSelection();
   }
 
   // Return false to indicate synchronous handling (no sendResponse needed)
