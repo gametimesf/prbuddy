@@ -19,9 +19,6 @@ dependencies = [
     # AWS (Polly TTS)
     "boto3>=1.35.0",
     
-    # ElevenLabs TTS (optional)
-    "elevenlabs>=1.0.0",
-    
     # Web server
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",

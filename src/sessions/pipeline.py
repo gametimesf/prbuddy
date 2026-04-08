@@ -518,9 +518,13 @@ class PipelineSession:
             transcript = await self.stt.transcribe(audio, audio_format=format)
             
             if not transcript.strip():
+                await self._emit(PipelineEventType.ERROR, {
+                    "error": "no_speech_detected",
+                    "message": "Didn't catch that. Try again.",
+                })
                 self._is_processing = False
                 return
-            
+
             await self._emit(PipelineEventType.TRANSCRIPT, {"text": transcript})
             
             # Process with agent
@@ -560,6 +564,10 @@ class PipelineSession:
             transcript = await self.stt.transcribe(audio, audio_format="pcm")
 
             if not transcript.strip():
+                await self._emit(PipelineEventType.ERROR, {
+                    "error": "no_speech_detected",
+                    "message": "Didn't catch that. Try again.",
+                })
                 self._is_processing = False
                 return
 

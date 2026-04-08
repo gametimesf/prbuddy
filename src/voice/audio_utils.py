@@ -8,6 +8,10 @@ import tempfile
 from pathlib import Path
 
 
+class AudioConversionError(RuntimeError):
+    """Raised when audio format conversion fails (e.g., ffmpeg missing)."""
+
+
 def decode_webm_to_pcm(webm_bytes: bytes, target_sample_rate: int = 24000) -> bytes:
     """Decode WebM audio to PCM16 bytes.
     
@@ -50,14 +54,13 @@ def decode_webm_to_pcm(webm_bytes: bytes, target_sample_rate: int = 24000) -> by
             Path(input_path).unlink(missing_ok=True)
             
     except FileNotFoundError:
-        # ffmpeg not installed - log warning and return empty
-        import logging
-        logging.warning("ffmpeg not found - cannot decode webm audio")
-        return b""
+        raise AudioConversionError(
+            "ffmpeg is not installed. Install ffmpeg to enable voice mode: brew install ffmpeg"
+        )
     except subprocess.CalledProcessError as e:
-        import logging
-        logging.warning(f"ffmpeg error decoding audio: {e.stderr.decode()}")
-        return b""
+        raise AudioConversionError(
+            f"ffmpeg failed to decode audio: {e.stderr.decode()}"
+        )
 
 
 def detect_audio_format(data: bytes) -> str:
