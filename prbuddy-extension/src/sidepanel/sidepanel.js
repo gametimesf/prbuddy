@@ -19,9 +19,7 @@ let selectedInputMode = 'text'; // 'text' or 'voice'
 // Audio state
 let isRecording = false;
 let isPlaying = false;
-let recordContext = null;
-let mediaStream = null;
-let audioWorklet = null;
+let speechRecognition = null;
 let playbackContext = null;
 let masterGain = null;
 let audioQueue = [];
@@ -31,16 +29,9 @@ let activeAudioSources = [];
 let audioStreamEnded = false;
 
 // Audio config (set by server)
-let inputSampleRate = 24000;
 let outputSampleRate = 16000;
 const MIN_BUFFER_CHUNKS = 2;
 const MAX_SCHEDULED_AHEAD = 2;
-
-// Silence detection config
-// Higher threshold = less sensitive to background noise (0.01 was too sensitive)
-const SILENCE_THRESHOLD = 0.03;
-const SILENCE_CHUNKS_BEFORE_SKIP = 3;
-let consecutiveSilentChunks = 0;
 
 // DOM elements
 const loadingEl = document.getElementById('loading');
@@ -1023,194 +1014,141 @@ async function toggleRecording() {
 }
 
 /**
- * Start audio recording.
+ * Start voice recognition using browser SpeechRecognition API.
+ * Sends transcripts as text messages — no audio streaming to server.
  */
 async function startRecording() {
   if (isRecording) return;
 
   stopAudioPlayback('mic-button');
 
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    addMessage('system', 'Speech recognition is not supported in this browser.');
+    return;
+  }
+
+  // Check mic permission (still needed for SpeechRecognition)
   try {
     const permissionStatus = await navigator.permissions.query({ name: 'microphone' }).catch(() => null);
-
     if (permissionStatus?.state === 'denied') {
       addMessage('system', 'Microphone permission denied. Please grant permission first.');
       showMicPermission();
       return;
     }
+  } catch (e) {
+    // permissions.query may not support microphone — continue anyway
+  }
 
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        sampleRate: inputSampleRate,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+  speechRecognition = new SpeechRecognition();
+  speechRecognition.continuous = true;
+  speechRecognition.interimResults = true;
+  speechRecognition.lang = 'en-US';
 
-    // Mark permission as granted
-    await chrome.storage.local.set({ micPermissionGranted: true });
+  let finalTranscript = '';
 
-    recordContext = new AudioContext({ sampleRate: inputSampleRate });
-    const source = recordContext.createMediaStreamSource(mediaStream);
-
-    if (recordContext.audioWorklet) {
-      await setupAudioWorklet(source);
-    } else {
-      setupScriptProcessor(source);
+  speechRecognition.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      if (result.isFinal) {
+        finalTranscript += result[0].transcript + ' ';
+      } else {
+        interim = result[0].transcript;
+      }
     }
+
+    // Show interim transcript in the listening indicator
+    if (interim) {
+      listeningIndicatorEl.textContent = interim;
+    }
+  };
+
+  speechRecognition.onend = () => {
+    // Send accumulated final transcript when recognition stops
+    const text = finalTranscript.trim();
+    if (text && isRecording) {
+      console.log('[SidePanel] Sending speech transcript:', text.substring(0, 80));
+
+      // Prepend selection context if available
+      let messageText = text;
+      if (currentSelection && currentSelection.hasSelection) {
+        const selText = currentSelection.text || '';
+        const filePath = currentSelection.context?.filePath || '';
+        const fileInfo = filePath ? ` (from ${filePath})` : '';
+        messageText = `Current diff selection${fileInfo}:\n\`\`\`\n${selText}\n\`\`\`\n\nUser question: ${text}`;
+      }
+
+      chrome.runtime.sendMessage({
+        type: 'SEND_MESSAGE',
+        text: messageText,
+      }).catch(() => {});
+
+      addMessage('user', text);
+      finalTranscript = '';
+    }
+
+    // Auto-restart if still in recording mode (continuous listening)
+    if (isRecording) {
+      try {
+        speechRecognition.start();
+      } catch (e) {
+        // Already started or other error — ignore
+      }
+    }
+  };
+
+  speechRecognition.onerror = (event) => {
+    console.error('[SidePanel] Speech recognition error:', event.error);
+    if (event.error === 'not-allowed') {
+      addMessage('system', 'Microphone access denied. Please grant permission.');
+      showMicPermission();
+      stopRecording();
+    } else if (event.error === 'no-speech') {
+      // Normal — just means silence detected, will auto-restart
+    } else if (event.error === 'aborted') {
+      // User stopped recording
+    } else {
+      addMessage('system', `Speech error: ${event.error}`);
+    }
+  };
+
+  try {
+    speechRecognition.start();
+    await chrome.storage.local.set({ micPermissionGranted: true });
 
     isRecording = true;
     micBtnEl.classList.add('recording');
     listeningIndicatorEl.classList.add('active');
-    console.log('[SidePanel] Recording started');
+    listeningIndicatorEl.textContent = 'Listening...';
+    console.log('[SidePanel] Browser speech recognition started');
 
     if (currentSelection && currentSelection.hasSelection) {
-      console.log('[SidePanel] Sending selection for voice mode');
-      chrome.runtime.sendMessage({
-        type: 'SEND_SELECTION',
-        selection: currentSelection,
-      }).catch(() => {});
+      console.log('[SidePanel] Selection context available for voice mode');
     }
-
   } catch (error) {
-    console.error('[SidePanel] Recording error:', error);
-
-    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-      addMessage('system', 'Microphone access denied. Please grant permission.');
-      showMicPermission();
-    } else if (error.name === 'NotFoundError') {
-      addMessage('system', 'No microphone found. Please connect a microphone.');
-    } else {
-      addMessage('system', `Microphone error: ${error.message}`);
-    }
+    console.error('[SidePanel] Speech recognition start error:', error);
+    addMessage('system', `Could not start speech recognition: ${error.message}`);
   }
 }
 
 /**
- * Set up AudioWorklet for recording.
- */
-async function setupAudioWorklet(source) {
-  try {
-    // Note: Using sidepanel path for audio processor
-    const processorUrl = chrome.runtime.getURL('src/sidepanel/audio-processor.js');
-    console.log('[SidePanel] Loading audio processor from:', processorUrl);
-
-    await recordContext.audioWorklet.addModule(processorUrl);
-    audioWorklet = new AudioWorkletNode(recordContext, 'pcm-processor');
-
-    let audioChunksSent = 0;
-
-    audioWorklet.port.onmessage = async (e) => {
-      if (!isRecording) return;
-
-      const float32 = e.data.audio;
-
-      let sumSquares = 0;
-      for (let i = 0; i < float32.length; i++) {
-        sumSquares += float32[i] * float32[i];
-      }
-      const rms = Math.sqrt(sumSquares / float32.length);
-
-      if (rms < SILENCE_THRESHOLD) {
-        consecutiveSilentChunks++;
-        if (consecutiveSilentChunks > SILENCE_CHUNKS_BEFORE_SKIP) {
-          return;
-        }
-      } else {
-        consecutiveSilentChunks = 0;
-      }
-
-      const pcm16 = new Int16Array(float32.length);
-      for (let i = 0; i < float32.length; i++) {
-        const s = Math.max(-1, Math.min(1, float32[i]));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
-
-      try {
-        await chrome.runtime.sendMessage({
-          type: 'SEND_AUDIO',
-          audio: base64,
-        });
-        audioChunksSent++;
-        if (audioChunksSent === 1 || audioChunksSent % 25 === 0) {
-          console.log(`[SidePanel] Sent audio chunk #${audioChunksSent} (rms: ${rms.toFixed(4)})`);
-        }
-      } catch (err) {
-        console.error('[SidePanel] Error sending audio:', err);
-      }
-    };
-
-    source.connect(audioWorklet);
-  } catch (err) {
-    console.error('[SidePanel] AudioWorklet setup failed:', err);
-    console.log('[SidePanel] Falling back to ScriptProcessor');
-    setupScriptProcessor(source);
-  }
-}
-
-/**
- * Fallback ScriptProcessor for older browsers.
- */
-function setupScriptProcessor(source) {
-  const processor = recordContext.createScriptProcessor(4096, 1, 1);
-
-  processor.onaudioprocess = async (e) => {
-    if (!isRecording) return;
-
-    const inputData = e.inputBuffer.getChannelData(0);
-    const pcm16 = new Int16Array(inputData.length);
-    for (let i = 0; i < inputData.length; i++) {
-      const s = Math.max(-1, Math.min(1, inputData[i]));
-      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(pcm16.buffer)));
-
-    try {
-      await chrome.runtime.sendMessage({
-        type: 'SEND_AUDIO',
-        audio: base64,
-      });
-    } catch (err) {
-      console.error('[SidePanel] Error sending audio:', err);
-    }
-  };
-
-  source.connect(processor);
-  processor.connect(recordContext.destination);
-}
-
-/**
- * Stop audio recording.
+ * Stop voice recognition.
  */
 function stopRecording() {
   if (!isRecording) return;
 
   isRecording = false;
-  consecutiveSilentChunks = 0;
   micBtnEl.classList.remove('recording');
   listeningIndicatorEl.classList.remove('active');
+  listeningIndicatorEl.textContent = '';
 
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(track => track.stop());
-    mediaStream = null;
+  if (speechRecognition) {
+    speechRecognition.stop();
+    speechRecognition = null;
   }
 
-  if (audioWorklet) {
-    audioWorklet.disconnect();
-    audioWorklet = null;
-  }
-
-  if (recordContext && recordContext.state !== 'closed') {
-    recordContext.close();
-    recordContext = null;
-  }
-
-  console.log('[SidePanel] Recording stopped');
+  console.log('[SidePanel] Speech recognition stopped');
 }
 
 /**
