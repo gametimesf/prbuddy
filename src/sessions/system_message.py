@@ -60,7 +60,17 @@ def generate_pr_context_message(context: "PRContext") -> str:
         f"IMPORTANT: When calling GitHub tools, use these values:\n"
         f"- owner: \"{context.owner}\"\n"
         f"- repo: \"{context.repo}\"\n"
-        f"- pr_number: {context.number}"
+        f"- pr_number: {context.number}\n\n"
+        f"## Signal vs Noise in Diffs\n"
+        f"Focus on what matters. When analyzing changes, prioritize:\n"
+        f"- **Core logic**: New functions, changed behavior, business rules\n"
+        f"- **Architecture**: New interfaces, changed contracts, dependency changes\n"
+        f"- **Risk**: Security changes, data model changes, migration logic\n\n"
+        f"Deprioritize or skip:\n"
+        f"- Generated files, auto-formatted code, lock files\n"
+        f"- README/doc-only changes (mention briefly, don't analyze)\n"
+        f"- Test boilerplate (mention coverage, skip line-by-line)\n"
+        f"- Import reordering, whitespace, comment-only changes"
     )
 
 

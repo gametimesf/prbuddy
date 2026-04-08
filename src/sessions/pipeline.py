@@ -95,8 +95,8 @@ class PipelineSession:
     """
     
     # VAD constants
-    SILENCE_THRESHOLD = 1.5  # seconds of silence before processing
-    ENERGY_THRESHOLD = 1500  # RMS threshold for speech detection (higher = less sensitive)
+    SILENCE_THRESHOLD = 0.8  # seconds of silence before processing
+    ENERGY_THRESHOLD = 1200  # RMS threshold for speech detection (higher = less sensitive)
     MIN_AUDIO_LENGTH = 4800  # Minimum bytes (~0.1s at 24kHz 16-bit)
     
     def __init__(
